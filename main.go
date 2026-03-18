@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -10,10 +11,10 @@ import (
 
 // Entry represents a parsed dictionary entry
 type Entry struct {
-	Chinese  string   // Chinese characters
-	Pinyin   string   // Pinyin transcription
-	Meanings []string // Cleaned meanings/translations
-	RawLine  string   // Original line for reference
+	Chinese          string   `json:"chinese"`           // Chinese characters
+	Pinyin           string   `json:"pinyin"`            // Pinyin transcription
+	Meanings         []string `json:"meanings"`          // Cleaned meanings/translations as array
+	MeaningsCombined string   `json:"meanings_combined"` // All meanings combined as single string
 }
 
 func main() {
@@ -38,7 +39,7 @@ func main() {
 		fmt.Println()
 	}
 
-	// Save cleaned results to a new file
+	// Save cleaned results to a text file
 	err = saveCleanedResults(entries, "./cleaned_results.txt")
 	if err != nil {
 		fmt.Printf("Error saving cleaned results: %v\n", err)
@@ -46,6 +47,15 @@ func main() {
 	}
 
 	fmt.Println("Cleaned results saved to cleaned_results.txt")
+
+	// Save as JSON for SQL import
+	err = saveAsJSON(entries, "./dictionary.json")
+	if err != nil {
+		fmt.Printf("Error saving JSON: %v\n", err)
+		return
+	}
+
+	fmt.Println("JSON data saved to dictionary.json")
 }
 
 // parseDumpFile parses the dump.txt file and returns structured entries
@@ -68,6 +78,11 @@ func parseDumpFile(filename string) ([]Entry, error) {
 			continue
 		}
 
+		// Skip lines that are just references (contain "см." or "см.[/p]")
+		if strings.Contains(line, "см.") || strings.Contains(line, "см.[/p]") {
+			continue
+		}
+
 		// Check if this line starts a new entry (Chinese characters without leading spaces)
 		if isChineseEntryStart(line) && !strings.HasPrefix(line, " ") {
 			// Save previous entry if exists
@@ -76,7 +91,9 @@ func parseDumpFile(filename string) ([]Entry, error) {
 			}
 
 			// Start new entry
-			currentEntry = &Entry{RawLine: line}
+			currentEntry = &Entry{
+				Meanings: []string{},
+			}
 
 			// Try to parse the first line of the entry
 			parts := parseEntryFirstLine(line)
@@ -130,24 +147,38 @@ func isPinyinLine(line string) bool {
 		return false
 	}
 
-	// Pinyin lines usually don't start with brackets and contain Latin letters
-	if strings.HasPrefix(line, "[") || strings.HasPrefix(line, " ") {
+	// Pinyin lines usually don't start with brackets
+	if strings.HasPrefix(line, "[") {
 		return false
 	}
 
-	// Check for Latin letters with possible tone numbers
-	hasLatin := false
+	// Check if line contains Chinese characters (if yes, it's not pinyin)
 	for _, r := range line {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == ' ' || r == '\'' {
-			hasLatin = true
-		} else if r > 127 && !(r >= 0x4E00 && r <= 0x9FFF) {
-			// Non-ASCII but not Chinese - might be pinyin with tone marks
-			hasLatin = true
+		if r >= 0x4E00 && r <= 0x9FFF {
+			return false
 		}
 	}
 
-	return hasLatin && !strings.Contains(line, "[m")
+	// Check for Latin letters, tone marks, and pinyin-specific characters
+	hasLatin := false
+	hasPinyinChar := false
+	for _, r := range line {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			hasLatin = true
+		}
+		// Check for pinyin tone marks and special characters
+		if r == 'ā' || r == 'á' || r == 'ǎ' || r == 'à' ||
+			r == 'ē' || r == 'é' || r == 'ě' || r == 'è' ||
+			r == 'ī' || r == 'í' || r == 'ǐ' || r == 'ì' ||
+			r == 'ō' || r == 'ó' || r == 'ǒ' || r == 'ò' ||
+			r == 'ū' || r == 'ú' || r == 'ǔ' || r == 'ù' ||
+			r == 'ǖ' || r == 'ǘ' || r == 'ǚ' || r == 'ǜ' ||
+			r == ' ' || r == '\'' || r == '’' {
+			hasPinyinChar = true
+		}
+	}
+
+	return hasLatin && (hasPinyinChar || !strings.ContainsAny(line, "[]"))
 }
 
 // parseEntryFirstLine parses the first line of an entry which may contain Chinese and pinyin
@@ -205,33 +236,58 @@ func extractMeanings(line string) []string {
 	return meanings
 }
 
-// cleanDSL removes DSL formatting tags from text
+// cleanDSL removes DSL formatting tags from text while preserving content
 func cleanDSL(text string) string {
-	// Remove various DSL tags
-	patterns := []string{
-		`\[m\d+\]`,           // Opening meaning tag
-		`\[/m\]`,             // Closing meaning tag
-		`\[p\].*?\[/p\]`,     // Part of speech tags
-		`\[c\].*?\[/c\]`,     // Comment tags
-		`\[i\].*?\[/i\]`,     // Italic tags
-		`\[ref\].*?\[/ref\]`, // Reference tags
-		`\[.*?\]`,            // Any other tags
+	// First, preserve content inside tags before removing the tags
+	// Replace specific tags with their content
+	patterns := []struct {
+		pattern string
+		replace string
+	}{
+		{`\[i\](.*?)\[/i\]`, "$1"},   // Keep italic content
+		{`\[c\](.*?)\[/c\]`, "$1"},   // Keep comment content
+		{`\[p\](.*?)\[/p\]`, "$1"},   // Keep part of speech content
+		{`\[ref\](.*?)\[/ref\]`, ""}, // Remove references completely
+		{`\[m\d+\]`, ""},             // Remove opening meaning tag
+		{`\[/m\]`, ""},               // Remove closing meaning tag
 	}
 
 	result := text
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(pattern)
-		result = re.ReplaceAllString(result, "")
+	for _, p := range patterns {
+		re := regexp.MustCompile(p.pattern)
+		result = re.ReplaceAllString(result, p.replace)
 	}
+
+	// Remove any remaining tags
+	re := regexp.MustCompile(`\[.*?\]`)
+	result = re.ReplaceAllString(result, "")
+
+	// Remove numbered prefixes like "1) ", "2) ", etc.
+	re = regexp.MustCompile(`^\d+\)\s*`)
+	result = re.ReplaceAllString(result, "")
 
 	// Clean up extra spaces and punctuation
 	result = strings.TrimSpace(result)
-	result = strings.Trim(result, ",.;:")
+
+	// Remove empty parentheses and extra commas
+	result = strings.ReplaceAll(result, "()", "")
+	result = strings.ReplaceAll(result, "( )", "")
+	result = strings.ReplaceAll(result, ", ,", ",")
+	result = strings.ReplaceAll(result, " ,", ",")
+	result = strings.ReplaceAll(result, ", ", ",")
+
+	// Final trim
+	result = strings.Trim(result, ",.;: ")
+
+	// Collapse multiple spaces
+	for strings.Contains(result, "  ") {
+		result = strings.ReplaceAll(result, "  ", " ")
+	}
 
 	return result
 }
 
-// saveCleanedResults saves parsed entries to a file
+// saveCleanedResults saves parsed entries to a text file
 func saveCleanedResults(entries []Entry, filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
@@ -242,13 +298,31 @@ func saveCleanedResults(entries []Entry, filename string) error {
 	writer := bufio.NewWriter(file)
 	defer writer.Flush()
 
+	// Filter out invalid entries (those without Chinese or with empty meanings)
+	var validEntries []Entry
 	for _, entry := range entries {
+		// Only include entries that have Chinese characters and at least one meaning
+		if entry.Chinese != "" && len(entry.Meanings) > 0 {
+			validEntries = append(validEntries, entry)
+		}
+	}
+
+	for _, entry := range validEntries {
 		// Write Chinese and pinyin
 		line := fmt.Sprintf("%s\t%s", entry.Chinese, entry.Pinyin)
 
 		// Add meanings
 		if len(entry.Meanings) > 0 {
-			line += "\t" + strings.Join(entry.Meanings, " | ")
+			// Join meanings and clean up
+			meaningsStr := strings.Join(entry.Meanings, " | ")
+			// Remove any remaining empty parentheses
+			meaningsStr = strings.ReplaceAll(meaningsStr, "()", "")
+			meaningsStr = strings.ReplaceAll(meaningsStr, "( )", "")
+			meaningsStr = strings.TrimSpace(meaningsStr)
+
+			if meaningsStr != "" {
+				line += "\t" + meaningsStr
+			}
 		}
 
 		_, err := writer.WriteString(line + "\n")
@@ -257,5 +331,42 @@ func saveCleanedResults(entries []Entry, filename string) error {
 		}
 	}
 
+	fmt.Printf("Saved %d valid entries (filtered from %d total)\n", len(validEntries), len(entries))
+	return nil
+}
+
+// saveAsJSON saves parsed entries as JSON for SQL import
+func saveAsJSON(entries []Entry, filename string) error {
+	// Filter out invalid entries (those without Chinese or with empty meanings)
+	var validEntries []Entry
+	for _, entry := range entries {
+		// Only include entries that have Chinese characters and at least one meaning
+		if entry.Chinese != "" && len(entry.Meanings) > 0 {
+			// Create combined meanings string
+			combined := strings.Join(entry.Meanings, " | ")
+			entry.MeaningsCombined = combined
+			validEntries = append(validEntries, entry)
+		}
+	}
+
+	// Create JSON data
+	jsonData, err := json.MarshalIndent(validEntries, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	// Save to file
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = file.Write(jsonData)
+	if err != nil {
+		return fmt.Errorf("failed to write JSON to file: %w", err)
+	}
+
+	fmt.Printf("Saved %d valid entries as JSON\n", len(validEntries))
 	return nil
 }
