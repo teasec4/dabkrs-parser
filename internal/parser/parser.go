@@ -12,10 +12,71 @@ import (
 	"golang.org/x/text/transform"
 )
 
-// ParseDSLFile парсит DSL файл и возвращает структурированные записи
-func ParseDSLFile(config Config) ([]Entry, error) {
+// normalizePinyin удаляет тоны из пиньиня и приводит к нижнему регистру
+func normalizePinyin(pinyin string) string {
+	if pinyin == "" {
+		return ""
+	}
+
+	// Создаем карту для замены тоновых символов
+	tonesMap := map[rune]rune{
+		'ā': 'a', 'á': 'a', 'ǎ': 'a', 'à': 'a',
+		'ē': 'e', 'é': 'e', 'ě': 'e', 'è': 'e',
+		'ī': 'i', 'í': 'i', 'ǐ': 'i', 'ì': 'i',
+		'ō': 'o', 'ó': 'o', 'ǒ': 'o', 'ò': 'o',
+		'ū': 'u', 'ú': 'u', 'ǔ': 'u', 'ù': 'u',
+		'ǖ': 'ü', 'ǘ': 'ü', 'ǚ': 'ü', 'ǜ': 'ü',
+		'Ā': 'A', 'Á': 'A', 'Ǎ': 'A', 'À': 'A',
+		'Ē': 'E', 'É': 'E', 'Ě': 'E', 'È': 'E',
+		'Ī': 'I', 'Í': 'I', 'Ǐ': 'I', 'Ì': 'I',
+		'Ō': 'O', 'Ó': 'O', 'Ǒ': 'O', 'Ò': 'O',
+		'Ū': 'U', 'Ú': 'U', 'Ǔ': 'U', 'Ù': 'U',
+		'Ǖ': 'Ü', 'Ǘ': 'Ü', 'Ǚ': 'Ü', 'Ǜ': 'Ü',
+	}
+
+	// Заменяем тоновые символы
+	var result strings.Builder
+	for _, r := range pinyin {
+		if replacement, ok := tonesMap[r]; ok {
+			result.WriteRune(replacement)
+		} else {
+			result.WriteRune(r)
+		}
+	}
+
+	normalized := result.String()
+
+	// Удаляем пробелы и апострофы, которые иногда встречаются в пиньине
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	normalized = strings.ReplaceAll(normalized, "'", "")
+	normalized = strings.ReplaceAll(normalized, "’", "")
+
+	// Приводим к нижнему регистру
+	normalized = strings.ToLower(normalized)
+
+	return normalized
+}
+
+// ParseDSLFiles парсит DSL файлы и возвращает структурированные записи
+func ParseDSLFiles(config Config) ([]Entry, error) {
+	var allEntries []Entry
+
+	// Обрабатываем каждый файл
+	for _, inputFile := range config.InputFiles {
+		entries, err := parseSingleDSLFile(inputFile, config.MaxLines, config.SkipSeeAlso)
+		if err != nil {
+			return nil, fmt.Errorf("ошибка при парсинге файла %s: %w", inputFile, err)
+		}
+		allEntries = append(allEntries, entries...)
+	}
+
+	return allEntries, nil
+}
+
+// parseSingleDSLFile парсит один DSL файл
+func parseSingleDSLFile(inputFile string, maxLines int, skipSeeAlso bool) ([]Entry, error) {
 	// Открываем файл
-	file, err := os.Open(config.InputFile)
+	file, err := os.Open(inputFile)
 	if err != nil {
 		return nil, fmt.Errorf("не удалось открыть файл: %w", err)
 	}
@@ -36,7 +97,7 @@ func ParseDSLFile(config Config) ([]Entry, error) {
 		lineCount++
 
 		// Останавливаемся если достигли максимального количества строк
-		if config.MaxLines > 0 && lineCount > config.MaxLines {
+		if maxLines > 0 && lineCount > maxLines {
 			break
 		}
 
@@ -46,7 +107,7 @@ func ParseDSLFile(config Config) ([]Entry, error) {
 		}
 
 		// Пропускаем ссылки "см." если настроено
-		if config.SkipSeeAlso && (strings.Contains(line, "см.") || strings.Contains(line, "см.[/p]")) {
+		if skipSeeAlso && (strings.Contains(line, "см.") || strings.Contains(line, "см.[/p]")) {
 			continue
 		}
 
@@ -72,6 +133,8 @@ func ParseDSLFile(config Config) ([]Entry, error) {
 			// Это продолжение записи (пиньинь или значение)
 			if currentEntry.Pinyin == "" && isPinyinLine(line) {
 				currentEntry.Pinyin = strings.TrimSpace(line)
+				// Нормализуем пиньинь
+				currentEntry.PinyinNormalized = normalizePinyin(currentEntry.Pinyin)
 			} else {
 				// Извлекаем значения из строки
 				meanings := extractMeanings(line)
@@ -89,7 +152,7 @@ func ParseDSLFile(config Config) ([]Entry, error) {
 		return entries, fmt.Errorf("ошибка при чтении файла: %w", err)
 	}
 
-	fmt.Printf("Обработано %d строк из DSL файла\n", lineCount)
+	fmt.Printf("Обработано %d строк из файла %s\n", lineCount, inputFile)
 	return entries, nil
 }
 

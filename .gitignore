@@ -2,3 +2,7 @@
 /dump.txt
 /cleaned_results.txt
 /dictionary.json
+/dictionary.db
+/cmd/optimize/dictionary.db
+/cmd/optimize/dictionary_optimized.db
+/dictionary_optimized.db
