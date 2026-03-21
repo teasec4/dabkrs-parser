@@ -6,3 +6,6 @@
 /cmd/optimize/dictionary.db
 /cmd/optimize/dictionary_optimized.db
 /dictionary_optimized.db
+/output.json
+/output.txt
+/test_output.txt
