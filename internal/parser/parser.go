@@ -162,6 +162,8 @@ func ParseDSLFile(path string)(error){
      		fmt.Println(m.Raw)
        
        		tokens := Lex(m.Raw)
+         	ast := Parse(tokens)
+         	PrintAST(ast, 0)
          
          	for _, t := range tokens{
         		fmt.Printf("%s: %q\n", t.Type, t.Value)
