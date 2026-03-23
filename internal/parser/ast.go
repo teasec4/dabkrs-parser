@@ -1,15 +1,19 @@
 package parser
 
-type NodeType string
+type NodeType int
 
-const(
-	TextNode NodeType = "text"
-	TagNode NodeType = "tag"
+const (
+    NodeText NodeType = iota
+    NodeParagraph   // p
+    NodeItalic      // i
+    NodeRef         // ref
+    NodeContainer   // c
+    NodeExample     // ex
+    NodeUnknown
 )
 
-type Node struct{
-	Type NodeType
-	Tag string
-	Content string
-	Children []Node
+type Node struct {
+    Type     NodeType
+    Value    string      // только для текста
+    Children []*Node
 }

@@ -1,10 +1,12 @@
 package parser
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"golang.org/x/text/encoding/unicode"
@@ -16,10 +18,25 @@ type Header struct{
 	Pinyin string
 }
 
+type RawMeaning struct{
+	Level int
+	Raw string
+	Order int
+}
+
+type DebugEntry struct{
+	Hanzi string
+	Pinyin string
+	Meanings []RawMeaning
+}
+
 // catch Caracters and Pinyin
 var entryStartRe = regexp.MustCompile(
-    `([\p{Han}]+)\s*([a-zA-ZāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüÜ\s]+?)\[m1]`,
+    `([\p{Han}_]+)\s*([a-zA-ZāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüÜ\s]+?)\[m1]`,
 )
+
+// catch meaning 
+var meaningRe = regexp.MustCompile(`\[m(\d+)](.*?)\[/m]`)
 
 func SplitEntries(context string) []string{
 	matches := entryStartRe.FindAllStringIndex(context, -1)
@@ -49,10 +66,29 @@ func ExtractHeader(entry string)(Header, error){
 		return Header{}, fmt.Errorf("не удалось распарсить header: %s", entry[:50])
 	}
 	
+	// CleanString to avoid "\n"
 	return Header{
 		Hanzi: match[1],
-		Pinyin: match[2],
+		Pinyin: CleanString(match[2]),
 	}, nil
+}
+
+func ExtractMeaning(entry string) []RawMeaning{
+	mathes := meaningRe.FindAllStringSubmatch(entry, -1)
+	
+	var result []RawMeaning
+	
+	for i, m := range mathes{
+		level, _ := strconv.Atoi(m[1])
+		
+		result = append(result, RawMeaning{
+			Level: level,
+			Raw: strings.TrimSpace(m[2]),
+			Order: i,
+		})
+	}
+	
+	return result
 }
 
 func ReadDSL(path string)(string, error){
@@ -74,6 +110,8 @@ func ReadDSL(path string)(string, error){
     return string(data), nil
 }
 
+
+
 // parse row text for undestanding
 func ParseDSLFile(path string)(error){
 	content, err := ReadDSL(path)
@@ -84,19 +122,61 @@ func ParseDSLFile(path string)(error){
     entries := SplitEntries(content)
     fmt.Println("\n entries:", len(entries))
     
+    
+    var entriesToJSON []DebugEntry
+    
     for i, e := range entries{
+    	// create Entiry
+     	var entry DebugEntry
+    	// get Header
     	header, err := ExtractHeader(e)
     	if err != nil {
             fmt.Println("skip:", err)
             continue
         }
         
+        entry.Hanzi = header.Hanzi
+        entry.Pinyin = header.Pinyin
+        
         fmt.Printf("%d: %s | %s\n", i, header.Hanzi, header.Pinyin)
+        
+        // get Meaning
+        meanings := ExtractMeaning(e)
+        for _, m := range meanings{
+       		fmt.Printf(" m%d: %s\n", m.Level, m.Raw)
+        }
+        
+        entry.Meanings = meanings
+        
+        entriesToJSON = append(entriesToJSON, entry)
         
         if i > 20 {
             break
         }
+        
     }
+    
+    for _, entry := range entriesToJSON{
+    	for _, m := range entry.Meanings{
+     		fmt.Println("====Raw====")
+     		fmt.Println(m.Raw)
+       
+       		tokens := Lex(m.Raw)
+         
+         	for _, t := range tokens{
+        		fmt.Printf("%s: %q\n", t.Type, t.Value)
+          }
+     }
+    }
+    
+    data, _ := json.MarshalIndent(entriesToJSON, "", " ")
+    os.WriteFile("debug.json", data, 0644)
     
     return nil
 }
+
+func CleanString(s string) string {
+    return strings.TrimSpace(strings.ReplaceAll(s, "\n", ""))
+}
+
+
