@@ -14,6 +14,7 @@ const (
     NodeRef         // ref
     NodeContainer   // c
     NodeExample     // ex
+    NodeStar         // [*]  (используется для примеров/маркеров)
     NodeUnknown
 )
 
@@ -29,12 +30,14 @@ func tagToNodeType(tag string) NodeType {
         return NodeParagraph
     case "i":
         return NodeItalic
-    case "ref":
-        return NodeRef
     case "c":
         return NodeContainer
+    case "ref":
+        return NodeRef
     case "ex":
         return NodeExample
+    case "*":
+        return NodeStar
     default:
         return NodeUnknown
     }
@@ -45,15 +48,12 @@ func Parse(tokens []Token) *Node {
     stack := []*Node{root}
 
     for _, tok := range tokens {
-
         switch tok.Type {
-
         case TokenText:
             node := &Node{
                 Type:  NodeText,
                 Value: tok.Value,
             }
-
             current := stack[len(stack)-1]
             current.Children = append(current.Children, node)
 
@@ -64,19 +64,22 @@ func Parse(tokens []Token) *Node {
                 Type: nodeType,
             }
 
+            // Специальная обработка для [ref] — сохраняем имя ссылки
+            if nodeType == NodeRef {
+                node.Value = tok.Value // можно позже добавить атрибуты
+            }
+
             current := stack[len(stack)-1]
             current.Children = append(current.Children, node)
-
-            
             stack = append(stack, node)
 
         case TokenTagClose:
             if len(stack) > 1 {
+                // Проверяем, что закрывается правильный тег (опционально)
                 stack = stack[:len(stack)-1] // pop
             }
         }
     }
-
     return root
 }
 
@@ -86,11 +89,35 @@ func PrintAST(node *Node, indent int) {
     switch node.Type {
     case NodeText:
         fmt.Printf("%sTEXT: %q\n", prefix, node.Value)
+    case NodeRef:
+        fmt.Printf("%sREF: %s\n", prefix, node.Value)
     default:
-        fmt.Printf("%sNODE: %v\n", prefix, node.Type)
+        fmt.Printf("%s%s\n", prefix, node.Type)
     }
 
     for _, child := range node.Children {
         PrintAST(child, indent+1)
+    }
+}
+
+
+func (n NodeType) String() string {
+    switch n {
+    case NodeText:
+        return "TEXT"
+    case NodeParagraph:
+        return "PARAGRAPH"
+    case NodeItalic:
+        return "ITALIC"
+    case NodeContainer:
+        return "CONTAINER"
+    case NodeRef:
+        return "REF"
+    case NodeExample:
+        return "EXAMPLE"
+    case NodeStar:
+        return "STAR"
+    default:
+        return "UNKNOWN"
     }
 }

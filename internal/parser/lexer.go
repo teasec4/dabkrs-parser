@@ -18,49 +18,43 @@ type Token struct {
 func Lex(input string) []Token {
     var tokens []Token
     i := 0
+    n := len(input)
 
-    for i < len(input) {
-    	// check if it's tag
-        if input[i] == '[' {
-        	// j - end of tag
-            j := strings.IndexByte(input[i:], ']')
-            if j == -1 {
-                break
-            }
-            
-            // inside of [] we got tag
-            tag := input[i+1 : i+j]
-            
-            // check if tag is open or close
-            if strings.HasPrefix(tag, "/") {
-                tokens = append(tokens, Token{
-                    Type:  TokenTagClose,
-                    Value: tag[1:],
-                })
+    for i < n {
+            if input[i] == '[' {
+                j := strings.IndexByte(input[i:], ']')
+                if j == -1 {
+                    // незакрытый тег — добавляем как текст
+                    tokens = append(tokens, Token{Type: TokenText, Value: input[i:]})
+                    break
+                }
+                tagContent := input[i+1 : i+j]
+    
+                if strings.HasPrefix(tagContent, "/") {
+                    tokens = append(tokens, Token{
+                        Type:  TokenTagClose,
+                        Value: strings.TrimPrefix(tagContent, "/"),
+                    })
+                } else {
+                    tokens = append(tokens, Token{
+                        Type:  TokenTagOpen,
+                        Value: tagContent,
+                    })
+                }
+                i += j + 1
             } else {
-                tokens = append(tokens, Token{
-                    Type:  TokenTagOpen,
-                    Value: tag,
-                })
+                // текст до следующего [
+                j := strings.IndexByte(input[i:], '[')
+                if j == -1 {
+                    j = n - i
+                }
+                text := input[i : i+j]
+                if text != "" {
+                    tokens = append(tokens, Token{Type: TokenText, Value: text})
+                }
+                i += j
             }
-            
-            // move forward to body of tag
-            i += j + 1
-        } else {
-        	// body inside tag
-            j := strings.IndexByte(input[i:], '[')
-            if j == -1 {
-                j = len(input) - i
-            }
-
-            tokens = append(tokens, Token{
-                Type:  TokenText,
-                Value: input[i : i+j],
-            })
-
-            i += j
         }
-    }
 
     return tokens
 }

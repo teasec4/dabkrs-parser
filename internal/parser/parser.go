@@ -35,26 +35,24 @@ var entryStartRe = regexp.MustCompile(
     `([\p{Han}_]+)\s*([a-zA-ZāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüÜ\s]+?)\[m1]`,
 )
 
+
 // catch meaning 
 var meaningRe = regexp.MustCompile(`\[m(\d+)](.*?)\[/m]`)
 
-func SplitEntries(context string) []string{
-	matches := entryStartRe.FindAllStringIndex(context, -1)
-	
+func SplitEntries(content string) []string{
+	matches := entryStartRe.FindAllStringIndex(content, -1)
 	var entries []string
 	
 	for i := range matches{
 		start := matches[i][0]
-		
-		var end int
+		end := len(content)
 		if i+1 < len(matches){
 			end = matches[i+1][0]
-		} else{
-			end = len(context)
 		}
-		
-		entry := strings.TrimSpace(context[start:end])
-		entries = append(entries, entry)
+		entry := strings.TrimSpace(content[start:end])
+        if entry != "" {
+            entries = append(entries, entry)
+        }
 	}
 	
 	return entries

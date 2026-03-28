@@ -3,7 +3,7 @@ package model
 type Entry struct{
 	Headword string // 中国
 	Pinyin string // zhongguo
-	Meanings []Meaning
+	Meanings []Meaning // inside [m] [/m]
 }
 
 type Meaning struct{
