@@ -2,6 +2,8 @@ package parser
 
 import (
 	"fmt"
+	"parser/internal/normalizer"
+
 	"strings"
 )
 
@@ -52,7 +54,7 @@ func Parse(tokens []Token) *Node {
         case TokenText:
             node := &Node{
                 Type:  NodeText,
-                Value: tok.Value,
+                Value: normalizer.CleanText(tok.Value),
             }
             current := stack[len(stack)-1]
             current.Children = append(current.Children, node)
@@ -121,3 +123,4 @@ func (n NodeType) String() string {
         return "UNKNOWN"
     }
 }
+

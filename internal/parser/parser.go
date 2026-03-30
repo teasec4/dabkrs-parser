@@ -1,3 +1,6 @@
+// DEPRICATED
+
+
 package parser
 
 import (
@@ -34,8 +37,6 @@ type DebugEntry struct{
 var entryStartRe = regexp.MustCompile(
     `([\p{Han}_]+)\s*([a-zA-ZāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüÜ\s]+?)\[m1]`,
 )
-
-
 // catch meaning 
 var meaningRe = regexp.MustCompile(`\[m(\d+)](.*?)\[/m]`)
 
