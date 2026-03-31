@@ -19,6 +19,7 @@ func StreamEntiresToJSON(root *parser.Node, filename string, limit int) error {
 
 	encoder := json.NewEncoder(w)
 
+	// Start JSON array
 	w.Write([]byte("[\n"))
 
 	count := 0
@@ -34,31 +35,33 @@ func StreamEntiresToJSON(root *parser.Node, filename string, limit int) error {
 		node := root.Children[i]
 
 		if node.Type == parser.NodeText {
-			// проверяем что это реальный entry
+			// Check if this is a real entry (next element should be NodeUnknown)
 			if i+1 >= len(root.Children) || root.Children[i+1].Type != parser.NodeUnknown {
 				continue
 			}
-			
-			// теперь закрываем предыдущий
-	        if current != nil {
-	            if !first {
-	                w.Write([]byte(",\n"))
-	            }
-	
-	            if err := encoder.Encode(current); err != nil {
-	                return err
-	            }
-	
-	            first = false
-	            count++
-	        }
 
+			// Write previous entry if it exists
+			if current != nil {
+				if !first {
+					w.Write([]byte(",\n"))
+				}
+
+				if err := encoder.Encode(current); err != nil {
+					return err
+				}
+
+				first = false
+				count++
+			}
+
+			// Create new entry
 			hanzi, pinyin := parser.SplitHanziPinyin(node.Value)
 
 			entry := parser.Entry{
 				Hanzi:            hanzi,
 				Pinyin:           pinyin,
 				PinyinNormalized: parser.NormalizePinyin(pinyin),
+				Meanings:         []parser.Meaning{}, // Initialize empty array
 			}
 
 			current = &entry
@@ -66,21 +69,30 @@ func StreamEntiresToJSON(root *parser.Node, filename string, limit int) error {
 		}
 
 		if node.Type == parser.NodeUnknown && current != nil {
-			current.Meanings = append(current.Meanings, parser.ExtractMeanings(node)...)
-			if !first {
-				w.Write([]byte(",\n"))
+			// Extract meanings and add to current entry
+			meanings := parser.ExtractMeanings(node)
+
+			// Set correct order for each meaning
+			for j := range meanings {
+				meanings[j].Order = len(current.Meanings) + j
 			}
 
-			if err := encoder.Encode(current); err != nil {
-				return err
-			}
-
-			first = false
-			count++
+			current.Meanings = append(current.Meanings, meanings...)
 		}
 	}
 
-	w.Write([]byte("]\n"))
+	// Write the last entry if it exists
+	if current != nil {
+		if !first {
+			w.Write([]byte(",\n"))
+		}
+		if err := encoder.Encode(current); err != nil {
+			return err
+		}
+	}
+
+	// End JSON array
+	w.Write([]byte("\n]\n"))
 
 	return nil
 }

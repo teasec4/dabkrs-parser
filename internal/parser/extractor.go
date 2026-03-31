@@ -3,141 +3,148 @@ package parser
 import "strings"
 
 type Entry struct {
-    Hanzi             string     `json:"hanzi"`
-    Pinyin            string     `json:"pinyin"`
-    PinyinNormalized  string     `json:"pinyin_normalized"`
-    Meanings          []Meaning  `json:"meanings"`
+	Hanzi            string    `json:"hanzi"`
+	Pinyin           string    `json:"pinyin"`
+	PinyinNormalized string    `json:"pinyin_normalized"`
+	Meanings         []Meaning `json:"meanings"`
 }
 
 type Meaning struct {
-    Text        string   `json:"text"`
-    PartOfSpeech string  `json:"part_of_speech,omitempty"`
-    Refs        []string `json:"refs,omitempty"`
-    Examples    []string `json:"examples,omitempty"`
-    Order       int      `json:"order"`
+	Text         string   `json:"text"`
+	PartOfSpeech string   `json:"part_of_speech,omitempty"`
+	Refs         []string `json:"refs,omitempty"`
+	Examples     []string `json:"examples,omitempty"`
+	Order        int      `json:"order"`
 }
 
 func ExtractEntries(root *Node, limit int) []Entry {
-    var entries []Entry
+	var entries []Entry
 
-    var current *Entry
+	var current *Entry
 
-    for i := 0; i < len(root.Children); i++ {
-    	// get limit for debug
-    	if limit > 0 && len(entries) >= limit{
-	    	break
-	    }
-					
-        node := root.Children[i]
+	for i := 0; i < len(root.Children); i++ {
+		// get limit for debug
+		if limit > 0 && len(entries) >= limit {
+			break
+		}
 
-        // HEADER (hanzi + pinyin)
-        if node.Type == NodeText {
-            hanzi, pinyin := SplitHanziPinyin(node.Value)
+		node := root.Children[i]
 
-            entry := Entry{
-                Hanzi:            hanzi,
-                Pinyin:           pinyin,
-                PinyinNormalized: NormalizePinyin(pinyin),
-            }
+		// HEADER (hanzi + pinyin)
+		if node.Type == NodeText {
+			hanzi, pinyin := SplitHanziPinyin(node.Value)
 
-            entries = append(entries, entry)
-            current = &entries[len(entries)-1]
+			entry := Entry{
+				Hanzi:            hanzi,
+				Pinyin:           pinyin,
+				PinyinNormalized: NormalizePinyin(pinyin),
+				Meanings:         []Meaning{}, // Initialize empty array
+			}
 
-            continue
-        }
+			entries = append(entries, entry)
+			current = &entries[len(entries)-1]
 
-        // meanings
-        if node.Type == NodeUnknown && current != nil {
-            meanings := ExtractMeanings(node)
-            current.Meanings = meanings
-        }
-    }
+			continue
+		}
 
-    return entries
+		// meanings
+		if node.Type == NodeUnknown && current != nil {
+			meanings := ExtractMeanings(node)
+
+			// Set correct order for each meaning
+			for j := range meanings {
+				meanings[j].Order = len(current.Meanings) + j
+			}
+
+			current.Meanings = append(current.Meanings, meanings...)
+		}
+	}
+
+	return entries
 }
 
 func SplitHanziPinyin(s string) (string, string) {
-    parts := strings.Fields(s)
+	parts := strings.Fields(s)
 
-    if len(parts) < 2 {
-        return s, ""
-    }
+	if len(parts) < 2 {
+		return s, ""
+	}
 
-    // heuristic:
-    // китайские иероглифы обычно первый блок
-    hanzi := parts[0]
-    pinyin := strings.Join(parts[1:], " ")
+	// heuristic:
+	// китайские иероглифы обычно первый блок
+	hanzi := parts[0]
+	pinyin := strings.Join(parts[1:], " ")
 
-    return hanzi, pinyin
+	return hanzi, pinyin
 }
 
 func NormalizePinyin(p string) string {
-    p = strings.ToLower(p)
+	p = strings.ToLower(p)
 
-    replacer := strings.NewReplacer(
-        "ā", "a", "á", "a", "ǎ", "a", "à", "a",
-        "ē", "e", "é", "e", "ě", "e", "è", "e",
-        "ī", "i", "í", "i", "ǐ", "i", "ì", "i",
-        "ō", "o", "ó", "o", "ǒ", "o", "ò", "o",
-        "ū", "u", "ú", "u", "ǔ", "u", "ù", "u",
-        "ǖ", "u", "ǘ", "u", "ǚ", "u", "ǜ", "u",
-    )
+	replacer := strings.NewReplacer(
+		"ā", "a", "á", "a", "ǎ", "a", "à", "a",
+		"ē", "e", "é", "e", "ě", "e", "è", "e",
+		"ī", "i", "í", "i", "ǐ", "i", "ì", "i",
+		"ō", "o", "ó", "o", "ǒ", "o", "ò", "o",
+		"ū", "u", "ú", "u", "ǔ", "u", "ù", "u",
+		"ǖ", "u", "ǘ", "u", "ǚ", "u", "ǜ", "u",
+	)
 
-    return replacer.Replace(p)
+	return replacer.Replace(p)
 }
 
 func ExtractMeanings(node *Node) []Meaning {
-    var meanings []Meaning
+	var meanings []Meaning
 
-    var current Meaning
+	var current Meaning
 
-    for _, child := range node.Children {
+	for _, child := range node.Children {
 
-        switch child.Type {
+		switch child.Type {
 
-        case NodeParagraph:
-            // part of speech
-            current.PartOfSpeech = ExtractText(child)
+		case NodeParagraph:
+			// part of speech
+			current.PartOfSpeech = ExtractText(child)
 
-        case NodeText:
-            text := ExtractText(child)
-            if text != "" {
-                current.Text += text + " "
-            }
+		case NodeText:
+			text := ExtractText(child)
+			if text != "" {
+				current.Text += text + " "
+			}
 
-        case NodeRef:
-            ref := ExtractText(child)
-            if ref != "" {
-                current.Refs = append(current.Refs, ref)
-            }
+		case NodeRef:
+			ref := ExtractText(child)
+			if ref != "" {
+				current.Refs = append(current.Refs, ref)
+			}
 
-        case NodeExample:
-            ex := ExtractText(child)
-            if ex != "" {
-                current.Examples = append(current.Examples, ex)
-            }
-        }
-    }
+		case NodeExample:
+			ex := ExtractText(child)
+			if ex != "" {
+				current.Examples = append(current.Examples, ex)
+			}
+		}
+	}
 
-    current.Text = strings.TrimSpace(current.Text)
+	current.Text = strings.TrimSpace(current.Text)
 
-    if current.Text != "" {
-        current.Order = 0
-        meanings = append(meanings, current)
-    }
+	if current.Text != "" {
+		current.Order = 0
+		meanings = append(meanings, current)
+	}
 
-    return meanings
+	return meanings
 }
 
 func ExtractText(n *Node) string {
-    if n.Type == NodeText {
-        return n.Value
-    }
+	if n.Type == NodeText {
+		return n.Value
+	}
 
-    var result string
-    for _, c := range n.Children {
-        result += ExtractText(c) + " "
-    }
+	var result string
+	for _, c := range n.Children {
+		result += ExtractText(c) + " "
+	}
 
-    return strings.TrimSpace(result)
+	return strings.TrimSpace(result)
 }

@@ -9,10 +9,10 @@ import (
 	"parser/internal/storage"
 )
 
-func main(){
+func main() {
 	// stream flag
 	byStream := true
-	
+
 	// path to first part of Dictionray
 	path := "./dabkrs/dabkrs_1.dsl"
 	fmt.Printf("Start parsing, path: %s \n", path)
@@ -23,40 +23,40 @@ func main(){
 		fmt.Println("Wrong path or something happend to read the file")
 		return
 	}
-	
+
 	// tokenize the raw string
 	tokens := parser.Lex(data)
-	
+
 	// root Node and childresn on List
 	ast := parser.Parse(tokens)
-	
-	if !byStream{
+
+	if !byStream {
 		entries := parser.ExtractEntries(ast, 100)
 
 		err = SaveJSON("output.json", entries)
 		if err != nil {
-		    panic(err)
+			panic(err)
 		}
-		
+
 		return
 	}
-	
+
 	err = storage.StreamEntiresToJSON(ast, "output_stream.json", 100)
 	if err != nil {
-	    panic(err)
+		panic(err)
 	}
-	
+
 }
 
 func SaveJSON(filename string, data any) error {
-    file, err := os.Create(filename)
-    if err != nil {
-        return err
-    }
-    defer file.Close()
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
-    encoder := json.NewEncoder(file)
-    encoder.SetIndent("", "  ")
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
 
-    return encoder.Encode(data)
+	return encoder.Encode(data)
 }
