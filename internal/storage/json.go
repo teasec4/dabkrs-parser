@@ -5,7 +5,17 @@ import (
 	"encoding/json"
 	"os"
 	"parser/internal/parser"
+	"strings"
 )
+
+func isDSLMetadata(text string) bool {
+	// Check if text contains DSL metadata directives
+	// DSL metadata starts with # (e.g., #NAME, #INDEX_LANGUAGE, #CONTENTS_LANGUAGE, #INCLUDE)
+	return strings.Contains(text, "#NAME") ||
+		strings.Contains(text, "#INDEX_LANGUAGE") ||
+		strings.Contains(text, "#CONTENTS_LANGUAGE") ||
+		strings.Contains(text, "#INCLUDE")
+}
 
 func StreamEntiresToJSON(root *parser.Node, filename string, limit int) error {
 	file, err := os.Create(filename)
@@ -35,6 +45,11 @@ func StreamEntiresToJSON(root *parser.Node, filename string, limit int) error {
 		node := root.Children[i]
 
 		if node.Type == parser.NodeText {
+			// Skip DSL metadata entries
+			if isDSLMetadata(node.Value) {
+				continue
+			}
+
 			// Check if this is a real entry (next element should be NodeUnknown)
 			if i+1 >= len(root.Children) || root.Children[i+1].Type != parser.NodeUnknown {
 				continue

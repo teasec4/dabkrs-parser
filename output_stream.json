@@ -1,6 +1,4 @@
 [
-{"hanzi":"#NAME","pinyin":"\"大БКРС - 250920 ( 1 / 3 )\" #INDEX_LANGUAGE \"Chinese\" #CONTENTS_LANGUAGE \"Russian\" #INCLUDE \"dabkrs_2.dsl\" #INCLUDE \"dabkrs_3.dsl\" 三比西河 sānbǐxīhé","pinyin_normalized":"\"大бкрс - 250920 ( 1 / 3 )\" #index_language \"chinese\" #contents_language \"russian\" #include \"dabkrs_2.dsl\" #include \"dabkrs_3.dsl\" 三比西河 sanbixihe","meanings":[{"text":"река Замбези ( )","order":0}]}
-,
 {"hanzi":"三个泉","pinyin":"sāngèquán","pinyin_normalized":"sangequan","meanings":[{"text":"Саньгэцюань, Уч-Булак, Üqbulak","order":0}]}
 ,
 {"hanzi":"三马林达","pinyin":"sānmǎlíndá","pinyin_normalized":"sanmalinda","meanings":[{"text":"Самаринда ( )","part_of_speech":"г.","order":0}]}
@@ -199,6 +197,8 @@
 ,
 {"hanzi":"班公湖","pinyin":"bāngōng hú","pinyin_normalized":"bangong hu","meanings":[]}
 ,
-{"hanzi":"班戈","pinyin":"bāngē","pinyin_normalized":"bange","meanings":[]}
+{"hanzi":"班戈","pinyin":"bāngē","pinyin_normalized":"bange","meanings":[{"text":"Багон ( )","order":0}]}
+,
+{"hanzi":"班达孟兹","pinyin":"bāndámèngzī","pinyin_normalized":"bandamengzi","meanings":[]}
 
 ]
