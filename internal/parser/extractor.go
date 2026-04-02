@@ -19,14 +19,7 @@ type Meaning struct {
 	Order        int      `json:"order"`
 }
 
-func isDSLMetadata(text string) bool {
-	// Check if text contains DSL metadata directives
-	// DSL metadata starts with # (e.g., #NAME, #INDEX_LANGUAGE, #CONTENTS_LANGUAGE, #INCLUDE)
-	return strings.Contains(text, "#NAME") ||
-		strings.Contains(text, "#INDEX_LANGUAGE") ||
-		strings.Contains(text, "#CONTENTS_LANGUAGE") ||
-		strings.Contains(text, "#INCLUDE")
-}
+
 
 func ExtractEntries(root *Node, limit int) []Entry {
 	var entries []Entry
@@ -43,10 +36,7 @@ func ExtractEntries(root *Node, limit int) []Entry {
 
 		// HEADER (hanzi + pinyin)
 		if node.Type == NodeText {
-			// Skip DSL metadata entries
-			if isDSLMetadata(node.Value) {
-				continue
-			}
+			
 
 			hanzi, pinyin := SplitHanziPinyin(node.Value)
 

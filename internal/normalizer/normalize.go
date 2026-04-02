@@ -37,3 +37,12 @@ func UniqueStrings(input []string) []string {
     return result
 }
 
+func isDSLMetadata(text string) bool {
+	// Check if text contains DSL metadata directives
+	// DSL metadata starts with # (e.g., #NAME, #INDEX_LANGUAGE, #CONTENTS_LANGUAGE, #INCLUDE)
+	return strings.Contains(text, "#NAME") ||
+		strings.Contains(text, "#INDEX_LANGUAGE") ||
+		strings.Contains(text, "#CONTENTS_LANGUAGE") ||
+		strings.Contains(text, "#INCLUDE")
+}
+
