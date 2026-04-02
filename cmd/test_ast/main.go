@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"parser/internal/config"
 	"parser/internal/parser"
 )
 
@@ -15,12 +16,13 @@ const MaxDepth = 5
 const MaxNodes = 100
 
 func main() {
+	config := config.InitConfig()
 	// path to first part of Dictionray
-	path := "./dabkrs/dabkrs_1.dsl"
-	fmt.Printf("Start parsing, path: %s \n", path)
+	// path := "./dabkrs/dabkrs_1.dsl"
+	fmt.Printf("Start parsing, path: %s \n", config.InputPath)
 
 	// read DSL and return raw string
-	data, err := parser.ReadDSL(path)
+	data, err := parser.ReadDSL(config.InputPath)
 	if err != nil {
 		fmt.Println("Wrong path or something happend to read the file")
 		return

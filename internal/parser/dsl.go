@@ -1,6 +1,3 @@
-// DEPRICATED
-
-
 package parser
 
 import (
