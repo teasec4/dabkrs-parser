@@ -19,13 +19,16 @@ type Meaning struct {
 	Order        int      `json:"order"`
 }
 
-func extractAllText(node *Node) string {
+func extractAllText(node *Node, depth int) string {
+	if depth > 100 {
+		return ""
+	}
 	if node.Type == NodeText {
 		return node.Value
 	}
 	var result string
 	for _, c := range node.Children {
-		result += extractAllText(c)
+		result += extractAllText(c, depth+1)
 	}
 	return result
 }
@@ -98,50 +101,20 @@ func ExtractEntries(root *Node, limit int) []Entry {
 		}
 
 		if node.Type == NodeUnknown {
-			allText := extractAllText(node)
+			meanings, embedded, pending := ExtractMeaningsWithEmbedded(node)
 
-			var pendingMeaning string
-
-			lines := strings.Split(allText, "\n")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-
-				hanzi, pinyin := SplitHanziPinyin(line)
-				if pinyin != "" && HasChinese(hanzi) {
-					if current != nil && pendingMeaning != "" {
-						current.Meanings = append(current.Meanings, Meaning{
-							Text:  strings.TrimSpace(pendingMeaning),
-							Order: len(current.Meanings),
-						})
-					}
-
-					entry := Entry{
-						Hanzi:            hanzi,
-						Pinyin:           pinyin,
-						PinyinNormalized: NormalizePinyin(pinyin),
-						Meanings:         []Meaning{},
-					}
-					entries = append(entries, entry)
-					current = &entries[len(entries)-1]
-					pendingMeaning = ""
-				} else {
-					if current != nil {
-						if pendingMeaning != "" {
-							pendingMeaning += " "
-						}
-						pendingMeaning += line
-					}
-				}
+			for j := range meanings {
+				meanings[j].Order = len(current.Meanings) + j
 			}
+			current.Meanings = append(current.Meanings, meanings...)
 
-			if current != nil && pendingMeaning != "" {
-				current.Meanings = append(current.Meanings, Meaning{
-					Text:  strings.TrimSpace(pendingMeaning),
-					Order: len(current.Meanings),
-				})
+			for _, emb := range embedded {
+				entries = append(entries, emb)
+				current = &entries[len(entries)-1]
+			}
+			if pending != nil {
+				entries = append(entries, *pending)
+				current = &entries[len(entries)-1]
 			}
 		}
 	}
@@ -288,12 +261,6 @@ func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
 				embedded = append(embedded, *pendingEntry)
 				pendingEntry = nil
 			}
-			nestedMeanings, nestedEmbedded, nestedPending := ExtractMeaningsWithEmbedded(child)
-			meanings = append(meanings, nestedMeanings...)
-			embedded = append(embedded, nestedEmbedded...)
-			if nestedPending != nil {
-				pendingEntry = nestedPending
-			}
 		}
 	}
 
@@ -331,11 +298,10 @@ func IsPinyin(s string) bool {
 			hasLetter = true
 			continue
 		}
-		if r == '\'' || r == 0x2019 || r == ' ' || r == 'ō' || r == 'ó' || r == 'ě' || r == 'è' ||
-			r == 'ā' || r == 'á' || r == 'ǎ' || r == 'à' ||
-			r == 'ī' || r == 'í' || r == 'ǐ' || r == 'ì' ||
-			r == 'ū' || r == 'ú' || r == 'ǔ' || r == 'ù' ||
-			r == 'ǖ' || r == 'ǘ' || r == 'ǚ' || r == 'ǜ' {
+		if r == '\'' || r == 0x2019 || r == ' ' {
+			continue
+		}
+		if r >= 0x00C0 && r <= 0x024F {
 			continue
 		}
 		return false
@@ -361,7 +327,7 @@ func NormalizePinyin(p string) string {
 		"ī", "i", "í", "i", "ǐ", "i", "ì", "i",
 		"ō", "o", "ó", "o", "ǒ", "o", "ò", "o",
 		"ū", "u", "ú", "u", "ǔ", "u", "ù", "u",
-		"ǖ", "u", "ǘ", "u", "ǚ", "u", "ǜ", "u",
+		"ǖ", "v", "ǘ", "v", "ǚ", "v", "ǜ", "v",
 	)
 
 	return replacer.Replace(p)

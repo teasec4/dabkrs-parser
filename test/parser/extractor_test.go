@@ -169,7 +169,7 @@ func TestSplitHanziPinyin(t *testing.T) {
 }
 
 func TestExtractEntries_Simple(t *testing.T) {
-	dsl := "#NAME \"Test\"\n上海 shanghai\n[m1]город Шанхай\n北京 beijing\n[m1]столица\n"
+	dsl := "#NAME \"Test\"\n上海 shanghai\n[m1]город Шанхай[/m]\n北京 beijing\n[m1]столица[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -190,7 +190,7 @@ func TestExtractEntries_Simple(t *testing.T) {
 }
 
 func TestExtractEntries_PinyinOnSeparateLine(t *testing.T) {
-	dsl := "#NAME \"Test\"\n三比西河\nsan bi xi he\n[m1]река Санбихэ\n"
+	dsl := "#NAME \"Test\"\n三比西河\nsan bi xi he\n[m1]река Санбихэ[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -211,7 +211,7 @@ func TestExtractEntries_PinyinOnSeparateLine(t *testing.T) {
 }
 
 func TestExtractEntries_Header(t *testing.T) {
-	dsl := "#NAME \"Test Dictionary\"\n#INDEX_LANGUAGE \"Chinese\"\n北京 beijing\n[m1]столица\n"
+	dsl := "#NAME \"Test Dictionary\"\n#INDEX_LANGUAGE \"Chinese\"\n北京 beijing\n[m1]столица[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -224,7 +224,7 @@ func TestExtractEntries_Header(t *testing.T) {
 }
 
 func TestExtractEntries_Limit(t *testing.T) {
-	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица\n上海 shanghai\n[m1]город\n天津 tianjin\n[m1]город\n"
+	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица[/m]\n上海 shanghai\n[m1]город[/m]\n天津 tianjin\n[m1]город[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -237,7 +237,7 @@ func TestExtractEntries_Limit(t *testing.T) {
 }
 
 func TestExtractMeanings_Basic(t *testing.T) {
-	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица Китая\n"
+	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица Китая[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -258,7 +258,7 @@ func TestExtractMeanings_Basic(t *testing.T) {
 }
 
 func TestExtractMeanings_WithPartOfSpeech(t *testing.T) {
-	dsl := "#NAME \"Test\"\n学习 xuexi\n[m1]\n[I]глагол\n[1]учиться, изучать\n"
+	dsl := "#NAME \"Test\"\n学习 xuexi\n[m1]\n[I]глагол\n[1]учиться, изучать[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -273,7 +273,7 @@ func TestExtractMeanings_WithPartOfSpeech(t *testing.T) {
 }
 
 func TestExtractMeanings_WithRefs(t *testing.T) {
-	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица\n[ref]参见 上海\n"
+	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица[/m]\n[ref]参见 上海[/ref]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -289,7 +289,7 @@ func TestExtractMeanings_WithRefs(t *testing.T) {
 }
 
 func TestExtractMeanings_WithExamples(t *testing.T) {
-	dsl := "#NAME \"Test\"\n学习 xuexi\n[m1]учиться\n[ex]我学习中文。|Я учу китайский язык.\n"
+	dsl := "#NAME \"Test\"\n学习 xuexi\n[m1]учиться[/m]\n[ex]我学习中文。|Я учу китайский язык.[/ex]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -306,7 +306,7 @@ func TestExtractMeanings_WithExamples(t *testing.T) {
 }
 
 func TestExtractText_NodeText(t *testing.T) {
-	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица\n"
+	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -328,7 +328,7 @@ func TestExtractText_NodeText(t *testing.T) {
 }
 
 func TestExtractEntries_MultipleMeanings(t *testing.T) {
-	dsl := "#NAME \"Test\"\n打 da\n[m1]ударять\n[m1]бить\n[m1]играть (в мяч)\n"
+	dsl := "#NAME \"Test\"\n打 da\n[m1]ударять[/m]\n[m1]бить[/m]\n[m1]играть (в мяч)[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
@@ -365,7 +365,7 @@ func TestExtractEntries_ParsesLargeFile(t *testing.T) {
 }
 
 func TestExtractEntries_PinyinNormalized(t *testing.T) {
-	dsl := "#NAME \"Test\"\n北京 běi jīng\n[m1]столица\n"
+	dsl := "#NAME \"Test\"\n北京 běi jīng\n[m1]столица[/m]\n"
 
 	entries, err := parser.ParseDSL(dsl)
 	if err != nil {
