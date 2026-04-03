@@ -19,14 +19,26 @@ type Meaning struct {
 	Order        int      `json:"order"`
 }
 
-func truncateMeaning(text string) string {
-	if idx := strings.Index(text, " _"); idx > 0 {
-		text = text[:idx]
+func splitMeanings(text string) []string {
+	text = strings.TrimSpace(text)
+	if text == "" || text == "_" {
+		return nil
 	}
-	if len(text) > 300 {
-		text = text[:300]
+
+	var result []string
+	parts := strings.Split(text, " _ ")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		p = strings.Trim(p, "_")
+		if p != "" && p != "_" && !strings.HasPrefix(p, "_") {
+			result = append(result, p)
+		}
 	}
-	return strings.TrimSpace(text)
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func hasChineseAndRussian(text string) bool {
@@ -62,15 +74,32 @@ func ExtractEntries(root *Node, limit int) []Entry {
 
 	var pendingHanzi string
 	var pendingMeaning string
+	var pendingRefs []string
 	var currentEntry *Entry
 
 	flushEntry := func() {
-		if currentEntry != nil && pendingMeaning != "" {
-			currentEntry.Meanings = append(currentEntry.Meanings, Meaning{
-				Text:  truncateMeaning(pendingMeaning),
-				Order: len(currentEntry.Meanings),
-			})
+		if currentEntry != nil && (pendingMeaning != "" || len(pendingRefs) > 0) {
+			if pendingMeaning != "" {
+				parts := splitMeanings(pendingMeaning)
+				for i, part := range parts {
+					m := Meaning{
+						Text:  part,
+						Order: i,
+					}
+					if len(pendingRefs) > 0 {
+						m.Refs = make([]string, len(pendingRefs))
+						copy(m.Refs, pendingRefs)
+					}
+					currentEntry.Meanings = append(currentEntry.Meanings, m)
+				}
+			} else if len(pendingRefs) > 0 {
+				currentEntry.Meanings = append(currentEntry.Meanings, Meaning{
+					Refs:  pendingRefs,
+					Order: 0,
+				})
+			}
 		}
+		pendingRefs = nil
 	}
 
 	var extractTextRecursive func(node *Node)
@@ -102,10 +131,6 @@ func ExtractEntries(root *Node, limit int) []Entry {
 					continue
 				}
 
-				if hasChineseAndRussian(line) {
-					continue
-				}
-
 				if HasChinese(line) {
 					hanzi, pinyin := SplitHanziPinyin(line)
 					if pinyin != "" {
@@ -115,6 +140,16 @@ func ExtractEntries(root *Node, limit int) []Entry {
 							Pinyin:           pinyin,
 							PinyinNormalized: NormalizePinyin(pinyin),
 							Meanings:         []Meaning{},
+						}
+						entries = append(entries, entry)
+						currentEntry = &entries[len(entries)-1]
+						pendingHanzi = ""
+						pendingMeaning = ""
+					} else if pendingHanzi == "" && (pendingMeaning != "" || len(pendingRefs) > 0) {
+						flushEntry()
+						entry := Entry{
+							Hanzi:    hanzi,
+							Meanings: []Meaning{},
 						}
 						entries = append(entries, entry)
 						currentEntry = &entries[len(entries)-1]
@@ -138,6 +173,12 @@ func ExtractEntries(root *Node, limit int) []Entry {
 				}
 			}
 
+		case NodeRef:
+			ref := strings.TrimSpace(ExtractText(node))
+			if ref != "" && HasChinese(ref) {
+				pendingRefs = append(pendingRefs, ref)
+			}
+
 		case NodeUnknown:
 			for _, child := range node.Children {
 				extractTextRecursive(child)
@@ -152,6 +193,14 @@ func ExtractEntries(root *Node, limit int) []Entry {
 
 	extractTextRecursive(root)
 	flushEntry()
+
+	var filtered []Entry
+	for _, e := range entries {
+		if e.Hanzi != "" {
+			filtered = append(filtered, e)
+		}
+	}
+	entries = filtered
 
 	if limit > 0 && len(entries) > limit {
 		entries = entries[:limit]
@@ -181,7 +230,7 @@ func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
 	}
 
 	flushCurrent := func() {
-		current.Text = truncateMeaning(current.Text)
+		current.Text = strings.TrimSpace(current.Text)
 		if current.Text != "" || len(current.Examples) > 0 {
 			current.Order = len(meanings)
 			meanings = append(meanings, current)
@@ -194,7 +243,7 @@ func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
 			flushCurrent()
 			return
 		}
-		current.Text = truncateMeaning(current.Text)
+		current.Text = strings.TrimSpace(current.Text)
 		if current.Text != "" || len(current.Examples) > 0 {
 			current.Order = len(entry.Meanings)
 			entry.Meanings = append(entry.Meanings, current)
@@ -330,6 +379,10 @@ func IsPinyin(s string) bool {
 		return false
 	}
 	hasLetter := false
+	hasTone := false
+
+	toneChars := "āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ"
+
 	for _, r := range s {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
 			hasLetter = true
@@ -341,9 +394,25 @@ func IsPinyin(s string) bool {
 		if r >= 0x00C0 && r <= 0x024F {
 			continue
 		}
+		if strings.ContainsRune(toneChars, r) {
+			hasTone = true
+			continue
+		}
 		return false
 	}
-	return hasLetter
+
+	return hasLetter && (hasTone || containsPinyinPattern(s))
+}
+
+func containsPinyinPattern(s string) bool {
+	pinyinPatterns := []string{"zh", "ch", "sh", "ng", "ai", "ei", "ao", "ou", "an", "en", "ang", "eng", "ong", "iang", "uang", "iong"}
+	lower := strings.ToLower(s)
+	for _, pattern := range pinyinPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func HasChinese(s string) bool {
