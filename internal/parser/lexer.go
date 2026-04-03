@@ -28,7 +28,6 @@ func Lex(input string) []Token {
 		if input[i] == '[' {
 			j := strings.IndexByte(input[i:], ']')
 			if j == -1 {
-				// незакрытый тег — добавляем как текст
 				tokens = append(tokens, Token{Type: TokenText, Value: input[i:]})
 				break
 			}
@@ -47,7 +46,6 @@ func Lex(input string) []Token {
 			}
 			i += j + 1
 		} else {
-			// текст до следующего [
 			j := strings.IndexByte(input[i:], '[')
 			if j == -1 {
 				j = n - i
@@ -63,7 +61,7 @@ func Lex(input string) []Token {
 	return tokens
 }
 
-func LexStream(r io.Reader, out chan <- Token) {
+func LexStream(r io.Reader, out chan<- Token) {
 	reader := bufio.NewReader(r)
 
 	for {
@@ -76,29 +74,29 @@ func LexStream(r io.Reader, out chan <- Token) {
 			tag, _ := reader.ReadString(']')
 			tag = strings.TrimSuffix(tag, "]")
 			if strings.HasPrefix(tag, "/") {
-                out <- Token{Type: TokenTagClose, Value: tag[1:]}
-            } else {
-                out <- Token{Type: TokenTagOpen, Value: tag}
-            }
+				out <- Token{Type: TokenTagClose, Value: tag[1:]}
+			} else {
+				out <- Token{Type: TokenTagOpen, Value: tag}
+			}
 		} else {
 			var sb strings.Builder
 			sb.WriteRune(ch)
-			
+
 			for {
-                ch, _, err := reader.ReadRune()
-                if err != nil || ch == '[' {
-                    if ch == '[' {
-                        reader.UnreadRune()
-                    }
-                    break
-                }
-                sb.WriteRune(ch)
-            }
-            
-            out <- Token{Type: TokenText, Value: sb.String()}
+				ch, _, err := reader.ReadRune()
+				if err != nil || ch == '[' {
+					if ch == '[' {
+						reader.UnreadRune()
+					}
+					break
+				}
+				sb.WriteRune(ch)
+			}
+
+			out <- Token{Type: TokenText, Value: sb.String()}
 		}
 	}
-	
+
 	close(out)
 }
 

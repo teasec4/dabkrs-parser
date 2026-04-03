@@ -7,21 +7,48 @@ import (
 	"testing"
 )
 
-func TestLex_Simple(t *testing.T){
-	input := "hello [p]world[/p]"
-	
-	tokens := parser.Lex(input)
-	
-	expected := []parser.Token{
-		{Type: parser.TokenText, Value: "hello "},
-        {Type: parser.TokenTagOpen, Value: "p"},
-        {Type: parser.TokenText, Value: "world"},
-        {Type: parser.TokenTagClose, Value: "p"},
+func TestLex(t *testing.T){
+	tests := []struct{
+		name string
+		input string
+		expected []parser.Token
+	}{
+		{
+			name:  "simple text",
+            input: "hello",
+            expected: []parser.Token{
+                {Type: parser.TokenText, Value: "hello"},
+            },
+		},
+		{
+            name:  "tag open and close",
+            input: "[p]hi[/p]",
+            expected: []parser.Token{
+                {Type: parser.TokenTagOpen, Value: "p"},
+                {Type: parser.TokenText, Value: "hi"},
+                {Type: parser.TokenTagClose, Value: "p"},
+            },
+        },
+        {
+            name:  "text + tag",
+            input: "a [b] c",
+            expected: []parser.Token{
+                {Type: parser.TokenText, Value: "a "},
+                {Type: parser.TokenTagOpen, Value: "b"},
+                {Type: parser.TokenText, Value: " c"},
+            },
+        },
 	}
 	
-	if !reflect.DeepEqual(tokens, expected) {
-        t.Errorf("expected %+v, got %+v", expected, tokens)
-    }
+	for _, tt := range tests{
+		t.Run(tt.name, func(t *testing.T) {
+			result := parser.Lex(tt.input)
+			
+			if !reflect.DeepEqual(result, tt.expected) {
+                t.Errorf("expected %+v, got %+v", tt.expected, result)
+            }
+		})
+	} 
 }
 
 func TestLexStream(t *testing.T) {
