@@ -35,35 +35,45 @@ func extractAllText(node *Node, depth int) string {
 
 func ExtractEntries(root *Node, limit int) []Entry {
 	var entries []Entry
-	var current *Entry
 
-	for i := 0; i < len(root.Children); i++ {
-		node := root.Children[i]
+	var pendingHanzi string
+	var pendingMeaning string
+	var currentEntry *Entry
 
-		if node.Type == NodeText {
-			value := node.Value
-			lines := strings.Split(value, "\n")
-			var pendingLine string
+	flushEntry := func() {
+		if currentEntry != nil && pendingMeaning != "" {
+			currentEntry.Meanings = append(currentEntry.Meanings, Meaning{
+				Text:  strings.TrimSpace(pendingMeaning),
+				Order: len(currentEntry.Meanings),
+			})
+		}
+	}
 
+	var extractTextRecursive func(node *Node)
+	extractTextRecursive = func(node *Node) {
+		switch node.Type {
+		case NodeText:
+			lines := strings.Split(node.Value, "\n")
 			for _, line := range lines {
 				line = strings.TrimRight(line, "\r")
 				line = strings.TrimSpace(line)
-
 				if line == "" || strings.HasPrefix(line, "#") {
 					continue
 				}
 
 				if IsPinyin(line) {
-					if pendingLine != "" {
+					if pendingHanzi != "" {
+						flushEntry()
 						entry := Entry{
-							Hanzi:            pendingLine,
+							Hanzi:            pendingHanzi,
 							Pinyin:           line,
 							PinyinNormalized: NormalizePinyin(line),
 							Meanings:         []Meaning{},
 						}
 						entries = append(entries, entry)
-						current = &entries[len(entries)-1]
-						pendingLine = ""
+						currentEntry = &entries[len(entries)-1]
+						pendingHanzi = ""
+						pendingMeaning = ""
 					}
 					continue
 				}
@@ -71,6 +81,7 @@ func ExtractEntries(root *Node, limit int) []Entry {
 				if HasChinese(line) {
 					hanzi, pinyin := SplitHanziPinyin(line)
 					if pinyin != "" {
+						flushEntry()
 						entry := Entry{
 							Hanzi:            hanzi,
 							Pinyin:           pinyin,
@@ -78,46 +89,37 @@ func ExtractEntries(root *Node, limit int) []Entry {
 							Meanings:         []Meaning{},
 						}
 						entries = append(entries, entry)
-						current = &entries[len(entries)-1]
+						currentEntry = &entries[len(entries)-1]
+						pendingHanzi = ""
+						pendingMeaning = ""
 					} else {
-						pendingLine = hanzi
+						pendingHanzi = hanzi
 					}
 					continue
 				}
 
-				hanzi, pinyin := SplitHanziPinyin(line)
-				if hanzi != "" {
-					entry := Entry{
-						Hanzi:            hanzi,
-						Pinyin:           pinyin,
-						PinyinNormalized: NormalizePinyin(pinyin),
-						Meanings:         []Meaning{},
+				if currentEntry != nil {
+					if pendingMeaning != "" {
+						pendingMeaning += " "
 					}
-					entries = append(entries, entry)
-					current = &entries[len(entries)-1]
+					pendingMeaning += line
 				}
 			}
-			continue
-		}
 
-		if node.Type == NodeUnknown {
-			meanings, embedded, pending := ExtractMeaningsWithEmbedded(node)
-
-			for j := range meanings {
-				meanings[j].Order = len(current.Meanings) + j
+		case NodeUnknown:
+			for _, child := range node.Children {
+				extractTextRecursive(child)
 			}
-			current.Meanings = append(current.Meanings, meanings...)
 
-			for _, emb := range embedded {
-				entries = append(entries, emb)
-				current = &entries[len(entries)-1]
-			}
-			if pending != nil {
-				entries = append(entries, *pending)
-				current = &entries[len(entries)-1]
+		default:
+			for _, child := range node.Children {
+				extractTextRecursive(child)
 			}
 		}
 	}
+
+	extractTextRecursive(root)
+	flushEntry()
 
 	if limit > 0 && len(entries) > limit {
 		entries = entries[:limit]
@@ -361,4 +363,15 @@ func ExtractText(n *Node) string {
 	}
 
 	return strings.TrimSpace(result)
+}
+
+func cleanPinyin(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "_" || p == "" {
+		return ""
+	}
+	if HasChinese(p) {
+		return ""
+	}
+	return p
 }
