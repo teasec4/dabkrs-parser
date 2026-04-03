@@ -19,9 +19,19 @@ type Meaning struct {
 	Order        int      `json:"order"`
 }
 
+func extractAllText(node *Node) string {
+	if node.Type == NodeText {
+		return node.Value
+	}
+	var result string
+	for _, c := range node.Children {
+		result += extractAllText(c)
+	}
+	return result
+}
+
 func ExtractEntries(root *Node, limit int) []Entry {
 	var entries []Entry
-
 	var current *Entry
 
 	for i := 0; i < len(root.Children); i++ {
@@ -29,7 +39,6 @@ func ExtractEntries(root *Node, limit int) []Entry {
 
 		if node.Type == NodeText {
 			value := node.Value
-
 			lines := strings.Split(value, "\n")
 			var pendingLine string
 
@@ -41,7 +50,7 @@ func ExtractEntries(root *Node, limit int) []Entry {
 					continue
 				}
 
-				if isPinyin(line) {
+				if IsPinyin(line) {
 					if pendingLine != "" {
 						entry := Entry{
 							Hanzi:            pendingLine,
@@ -56,7 +65,7 @@ func ExtractEntries(root *Node, limit int) []Entry {
 					continue
 				}
 
-				if hasChinese(line) {
+				if HasChinese(line) {
 					hanzi, pinyin := SplitHanziPinyin(line)
 					if pinyin != "" {
 						entry := Entry{
@@ -88,12 +97,52 @@ func ExtractEntries(root *Node, limit int) []Entry {
 			continue
 		}
 
-		if node.Type == NodeUnknown && current != nil {
-			meanings := ExtractMeanings(node)
-			for j := range meanings {
-				meanings[j].Order = len(current.Meanings) + j
+		if node.Type == NodeUnknown {
+			allText := extractAllText(node)
+
+			var pendingMeaning string
+
+			lines := strings.Split(allText, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+
+				hanzi, pinyin := SplitHanziPinyin(line)
+				if pinyin != "" && HasChinese(hanzi) {
+					if current != nil && pendingMeaning != "" {
+						current.Meanings = append(current.Meanings, Meaning{
+							Text:  strings.TrimSpace(pendingMeaning),
+							Order: len(current.Meanings),
+						})
+					}
+
+					entry := Entry{
+						Hanzi:            hanzi,
+						Pinyin:           pinyin,
+						PinyinNormalized: NormalizePinyin(pinyin),
+						Meanings:         []Meaning{},
+					}
+					entries = append(entries, entry)
+					current = &entries[len(entries)-1]
+					pendingMeaning = ""
+				} else {
+					if current != nil {
+						if pendingMeaning != "" {
+							pendingMeaning += " "
+						}
+						pendingMeaning += line
+					}
+				}
 			}
-			current.Meanings = append(current.Meanings, meanings...)
+
+			if current != nil && pendingMeaning != "" {
+				current.Meanings = append(current.Meanings, Meaning{
+					Text:  strings.TrimSpace(pendingMeaning),
+					Order: len(current.Meanings),
+				})
+			}
 		}
 	}
 
@@ -104,70 +153,10 @@ func ExtractEntries(root *Node, limit int) []Entry {
 	return entries
 }
 
-func SplitHanziPinyin(s string) (string, string) {
-	parts := strings.Fields(s)
-
-	if len(parts) < 2 {
-		return s, ""
-	}
-
-	// heuristic:
-	// китайские иероглифы обычно первый блок
-	hanzi := parts[0]
-	pinyin := strings.Join(parts[1:], " ")
-
-	return hanzi, pinyin
-}
-
-func isPinyin(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	hasLetter := false
-	for _, r := range s {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
-			hasLetter = true
-			continue
-		}
-		if r == '\'' || r == 0x2019 || r == ' ' || r == 'ō' || r == 'ó' || r == 'ě' || r == 'è' ||
-			r == 'ā' || r == 'á' || r == 'ǎ' || r == 'à' ||
-			r == 'ē' || r == 'é' || r == 'ě' || r == 'è' ||
-			r == 'ī' || r == 'í' || r == 'ǐ' || r == 'ì' ||
-			r == 'ū' || r == 'ú' || r == 'ǔ' || r == 'ù' ||
-			r == 'ǖ' || r == 'ǘ' || r == 'ǚ' || r == 'ǜ' {
-			continue
-		}
-		return false
-	}
-	return hasLetter
-}
-
-func hasChinese(s string) bool {
-	for _, r := range s {
-		if r >= 0x4E00 && r <= 0x9FFF {
-			return true
-		}
-	}
-	return false
-}
-
-func NormalizePinyin(p string) string {
-	p = strings.ToLower(p)
-
-	replacer := strings.NewReplacer(
-		"ā", "a", "á", "a", "ǎ", "a", "à", "a",
-		"ē", "e", "é", "e", "ě", "e", "è", "e",
-		"ī", "i", "í", "i", "ǐ", "i", "ì", "i",
-		"ō", "o", "ó", "o", "ǒ", "o", "ò", "o",
-		"ū", "u", "ú", "u", "ǔ", "u", "ù", "u",
-		"ǖ", "u", "ǘ", "u", "ǚ", "u", "ǜ", "u",
-	)
-
-	return replacer.Replace(p)
-}
-
-func ExtractMeanings(node *Node) []Meaning {
+func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
 	var meanings []Meaning
+	var embedded []Entry
+	var pendingEntry *Entry
 
 	var current Meaning
 
@@ -184,6 +173,40 @@ func ExtractMeanings(node *Node) []Meaning {
 		}
 	}
 
+	flushCurrent := func() {
+		current.Text = strings.TrimSpace(current.Text)
+		if current.Text != "" || len(current.Examples) > 0 {
+			current.Order = len(meanings)
+			meanings = append(meanings, current)
+		}
+		current = Meaning{}
+	}
+
+	flushCurrentToEntry := func(entry *Entry) {
+		if entry == nil {
+			flushCurrent()
+			return
+		}
+		current.Text = strings.TrimSpace(current.Text)
+		if current.Text != "" || len(current.Examples) > 0 {
+			current.Order = len(entry.Meanings)
+			entry.Meanings = append(entry.Meanings, current)
+		}
+		current = Meaning{}
+	}
+
+	addText := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		skipSpace := text == "(" || text == ")" || strings.HasPrefix(text, "(")
+		if current.Text != "" && !skipSpace {
+			current.Text += " "
+		}
+		current.Text += text
+	}
+
 	for _, child := range node.Children {
 		switch child.Type {
 		case NodeParagraph:
@@ -193,13 +216,33 @@ func ExtractMeanings(node *Node) []Meaning {
 			}
 
 		case NodeText:
-			text := strings.TrimSpace(ExtractText(child))
+			text := ExtractText(child)
 			if text != "" {
-				skipSpace := text == "(" || text == ")" || strings.HasPrefix(text, "(")
-				if current.Text != "" && !skipSpace {
-					current.Text += " "
+				lines := strings.Split(text, "\n")
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if line == "" {
+						continue
+					}
+					hanzi, pinyin := SplitHanziPinyin(line)
+					if pinyin != "" && HasChinese(hanzi) {
+						flushCurrentToEntry(pendingEntry)
+						if pendingEntry != nil {
+							embedded = append(embedded, *pendingEntry)
+							pendingEntry = nil
+						}
+						pendingEntry = &Entry{
+							Hanzi:            hanzi,
+							Pinyin:           pinyin,
+							PinyinNormalized: NormalizePinyin(pinyin),
+							Meanings:         []Meaning{},
+						}
+					} else if pendingEntry != nil {
+						addText(line)
+					} else {
+						addText(line)
+					}
 				}
-				current.Text += text
 			}
 
 		case NodeRef:
@@ -238,16 +281,94 @@ func ExtractMeanings(node *Node) []Meaning {
 
 		case NodeStar:
 			collectExamples(child)
+
+		case NodeUnknown:
+			flushCurrentToEntry(pendingEntry)
+			if pendingEntry != nil {
+				embedded = append(embedded, *pendingEntry)
+				pendingEntry = nil
+			}
+			nestedMeanings, nestedEmbedded, nestedPending := ExtractMeaningsWithEmbedded(child)
+			meanings = append(meanings, nestedMeanings...)
+			embedded = append(embedded, nestedEmbedded...)
+			if nestedPending != nil {
+				pendingEntry = nestedPending
+			}
 		}
 	}
 
-	current.Text = strings.TrimSpace(current.Text)
-
-	if current.Text != "" || len(current.Examples) > 0 {
-		current.Order = 0
-		meanings = append(meanings, current)
+	flushCurrentToEntry(pendingEntry)
+	if pendingEntry != nil {
+		embedded = append(embedded, *pendingEntry)
+		pendingEntry = nil
 	}
 
+	return meanings, embedded, pendingEntry
+}
+
+func SplitHanziPinyin(s string) (string, string) {
+	parts := strings.Fields(s)
+
+	if len(parts) < 2 {
+		return s, ""
+	}
+
+	// heuristic:
+	// китайские иероглифы обычно первый блок
+	hanzi := parts[0]
+	pinyin := strings.Join(parts[1:], " ")
+
+	return hanzi, pinyin
+}
+
+func IsPinyin(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	hasLetter := false
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
+			hasLetter = true
+			continue
+		}
+		if r == '\'' || r == 0x2019 || r == ' ' || r == 'ō' || r == 'ó' || r == 'ě' || r == 'è' ||
+			r == 'ā' || r == 'á' || r == 'ǎ' || r == 'à' ||
+			r == 'ī' || r == 'í' || r == 'ǐ' || r == 'ì' ||
+			r == 'ū' || r == 'ú' || r == 'ǔ' || r == 'ù' ||
+			r == 'ǖ' || r == 'ǘ' || r == 'ǚ' || r == 'ǜ' {
+			continue
+		}
+		return false
+	}
+	return hasLetter
+}
+
+func HasChinese(s string) bool {
+	for _, r := range s {
+		if r >= 0x4E00 && r <= 0x9FFF {
+			return true
+		}
+	}
+	return false
+}
+
+func NormalizePinyin(p string) string {
+	p = strings.ToLower(p)
+
+	replacer := strings.NewReplacer(
+		"ā", "a", "á", "a", "ǎ", "a", "à", "a",
+		"ē", "e", "é", "e", "ě", "e", "è", "e",
+		"ī", "i", "í", "i", "ǐ", "i", "ì", "i",
+		"ō", "o", "ó", "o", "ǒ", "o", "ò", "o",
+		"ū", "u", "ú", "u", "ǔ", "u", "ù", "u",
+		"ǖ", "u", "ǘ", "u", "ǚ", "u", "ǜ", "u",
+	)
+
+	return replacer.Replace(p)
+}
+
+func ExtractMeanings(node *Node) []Meaning {
+	meanings, _, _ := ExtractMeaningsWithEmbedded(node)
 	return meanings
 }
 

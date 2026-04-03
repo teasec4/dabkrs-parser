@@ -1,99 +1,152 @@
 CONTAINER:
-	TEXT:#NAME "大БКРС - 250920 ( 1 / 3 )" #INDEX_LANGUAGE "Chinese" #CONTENTS_LANGUAGE "Russian" #INCLUDE "dabkrs_2.dsl" #INCLUDE "dabkrs_3.dsl" 三比西河 sānbǐxīhé
+	TEXT:#NAME "大БКРС - 250920 ( 1 / 3 )"
+#INDEX_LANGUAGE "Chinese"
+#CONTENTS_LANGUAGE "Russian"
+#INCLUDE "dabkrs_2.dsl"
+#INCLUDE "dabkrs_3.dsl"
+
+三比西河
+ sānbǐxīhé
+ 
 	UNKNOWN:
 		TEXT:река Замбези (
 		ITALIC:
 			TEXT:Южная Африка
 		TEXT:)
-	TEXT:三个泉 sāngèquán
+	TEXT:
+三个泉
+ sāngèquán
+ 
 	UNKNOWN:
-		TEXT:Саньгэцюань, Уч-Булак, Üqbulak
+		TEXT:Саньгэцюань, Уч-Булак, Üqbulak 
 		ITALIC:
 			TEXT:(посёлок в Синьцзян-Уйгурском автономном районе, КНР)
-	TEXT:三马林达 sānmǎlíndá
+	TEXT:
+三马林达
+ sānmǎlíndá
+ 
 	UNKNOWN:
 		PARAGRAPH:
 			TEXT:г.
-		TEXT:Самаринда (
+		TEXT: Самаринда (
 		ITALIC:
 			TEXT:Индонезия
 		TEXT:)
-	TEXT:三摩呾咤 sānmódázhà
+	TEXT:
+三摩呾咤
+ sānmódázhà
+ 
 	UNKNOWN:
 		PARAGRAPH:
 			TEXT:ист.
-		TEXT:Саматата (
+		TEXT: Саматата (
 		ITALIC:
 			TEXT:государство в Вост. Индии в эпоху Тан
 		TEXT:)
-	TEXT:上海市 shànghǎi shì
+	TEXT:
+上海市
+ shànghǎi shì
+ 
 	UNKNOWN:
 		PARAGRAPH:
 			TEXT:см.
-		TEXT:
+		TEXT: 
 		REF:ref
 			TEXT:上海
-	TEXT:土耳克门 tǔěrkèmén
+	TEXT:
+土耳克门
+ tǔěrkèmén
+ 
 	UNKNOWN:
 		CONTAINER:
 			ITALIC:
-				TEXT:уст.
+				TEXT:уст. 
 		TEXT:Туркмения
-	TEXT:土耳其斯坦 tǔ’ěrqísītǎn
+	TEXT:
+土耳其斯坦
+ tǔ’ěrqísītǎn
+ 
 	UNKNOWN:
 		PARAGRAPH:
 			TEXT:см.
-		TEXT:
+		TEXT: 
 		REF:ref
 			TEXT:突厥斯坦
-	TEXT:土拉河 tǔlā hé
+	TEXT:
+土拉河
+ tǔlā hé
+ 
 	UNKNOWN:
 		TEXT:река Тола, река Тула
-	TEXT:土国 tǔguó
+	TEXT:
+土国
+ tǔguó
+ 
 	UNKNOWN:
 		TEXT:1) Турция
 	UNKNOWN:
 		TEXT:2) Туркменистан
-	TEXT:土喇河 tǔlǎ hé
+	TEXT:
+土喇河
+ tǔlǎ hé
+ 
 	UNKNOWN:
 		TEXT:река Тола, река Тула
-	TEXT:士麦拿 shìmàiná
+	TEXT:
+士麦拿
+ shìmàiná
+ 
 	UNKNOWN:
 		TEXT:Смирна (
 		ITALIC:
 			TEXT:теперь город Измир в Турции
 		TEXT:)
-	TEXT:碟仙 _
+	TEXT:
+碟仙
+ _
+ 
 	UNKNOWN:
 		TEXT:碟仙：顾名思义就是在碟子上的神仙。这是一种比喻的称谓，阴阳不测为之神·《易经》，人们在用碟子占卜时，发现碟子会自我移动，回答问题，变化莫测，因为不知道其中的原因，故称为碟仙。
-	TEXT:工布江达 gōngbùjiāngdá
+	TEXT:
+工布江达
+ gōngbùjiāngdá
+ 
 	UNKNOWN:
 		CONTAINER:
 			ITALIC:
 				TEXT:г. и уезд
-		TEXT:Нгапо (Gonabo’gyamda Гонабогьямда;
+		TEXT: Нгапо (Gonabo’gyamda Гонабогьямда; 
 		ITALIC:
 			TEXT:Тибетский
 			CONTAINER:
-				TEXT:авт.
-			TEXT:р-н; КНР
+				TEXT: авт.
+			TEXT: р-н; КНР
 		TEXT:)
-	TEXT:仁川 rénchuān
+	TEXT:
+仁川
+ rénchuān
+ 
 	UNKNOWN:
-		TEXT:Инчхон,
+		TEXT:Инчхон, 
 		PARAGRAPH:
 			TEXT:устар.
-		TEXT:Чемульпхо (
+		TEXT: Чемульпхо (
 		ITALIC:
 			TEXT:город-метрополия в Южной Корее
 		TEXT:)
-	TEXT:匹兹堡 pǐzībǎo
+	TEXT:
+匹兹堡
+ pǐzībǎo
+ 
 	UNKNOWN:
 		TEXT:Питтсбург (
 		ITALIC:
 			TEXT:город в США
 		TEXT:)
-	TEXT:仙台 xiāntái
+	TEXT:
+仙台
+ xiāntái
+ 
 	UNKNOWN:
 		TEXT:Сендай (
 		ITALIC:
