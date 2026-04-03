@@ -21,10 +21,12 @@ func NewDB(path string) (*DB, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite3", path)
+	db, err := sql.Open("sqlite3", path+"?_busy_timeout=60000&_synchronous=OFF&_journal_mode=WAL")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+
+	db.SetMaxOpenConns(1)
 
 	return &DB{db: db}, nil
 }
@@ -35,10 +37,12 @@ CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hanzi TEXT NOT NULL UNIQUE,
     pinyin TEXT,
-    pinyin_normalized TEXT
+    pinyin_normalized TEXT,
+    frequency INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_entries_hanzi ON entries(hanzi);
 CREATE INDEX IF NOT EXISTS idx_entries_pinyin_norm ON entries(pinyin_normalized);
+CREATE INDEX IF NOT EXISTS idx_entries_frequency ON entries(frequency DESC);
 
 CREATE TABLE IF NOT EXISTS meanings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,19 +149,100 @@ func (s *DB) InsertEntry(entry *parser.Entry) (int64, error) {
 	return entryID, nil
 }
 
-func (s *DB) InsertEntries(entries []parser.Entry, batchSize int) (int, error) {
-	inserted := 0
-	for i, entry := range entries {
-		if _, err := s.InsertEntry(&entry); err != nil {
-			return inserted, fmt.Errorf("insert entry %d (%s): %w", i, entry.Hanzi, err)
-		}
-		inserted++
-
-		if batchSize > 0 && inserted%batchSize == 0 {
-			fmt.Printf("Inserted %d entries...\n", inserted)
-		}
+func (s *DB) InsertEntriesBatch(entries []parser.Entry, batchSize int) (int, error) {
+	if batchSize <= 0 {
+		batchSize = 5000
 	}
-	return inserted, nil
+
+	_, err := s.db.Exec("PRAGMA synchronous = OFF")
+	if err != nil {
+		return 0, err
+	}
+	_, err = s.db.Exec("PRAGMA journal_mode = WAL")
+	if err != nil {
+		return 0, err
+	}
+
+	totalInserted := 0
+	totalBatches := (len(entries) + batchSize - 1) / batchSize
+
+	for batchNum := 0; batchNum < totalBatches; batchNum++ {
+		start := batchNum * batchSize
+		end := start + batchSize
+		if end > len(entries) {
+			end = len(entries)
+		}
+		batch := entries[start:end]
+
+		tx, err := s.db.Begin()
+		if err != nil {
+			return totalInserted, fmt.Errorf("begin tx: %w", err)
+		}
+
+		entryIDs := make(map[string]int)
+
+		for _, entry := range batch {
+			var entryID int64
+			err := tx.QueryRow(`
+				INSERT INTO entries (hanzi, pinyin, pinyin_normalized)
+				VALUES (?, ?, ?)
+				ON CONFLICT(hanzi) DO UPDATE SET
+					pinyin = excluded.pinyin,
+					pinyin_normalized = excluded.pinyin_normalized
+				RETURNING id
+			`, entry.Hanzi, entry.Pinyin, entry.PinyinNormalized).Scan(&entryID)
+
+			if err != nil {
+				tx.Rollback()
+				return totalInserted, fmt.Errorf("insert entry (%s): %w", entry.Hanzi, err)
+			}
+
+			entryIDs[entry.Hanzi] = int(entryID)
+			totalInserted++
+
+			for i, m := range entry.Meanings {
+				result, err := tx.Exec(`
+					INSERT INTO meanings (entry_id, text, part_of_speech, order_num)
+					VALUES (?, ?, ?, ?)
+				`, entryID, m.Text, m.PartOfSpeech, i)
+				if err != nil {
+					tx.Rollback()
+					return totalInserted, fmt.Errorf("insert meaning: %w", err)
+				}
+
+				meaningID, _ := result.LastInsertId()
+
+				for _, ref := range m.Refs {
+					_, err = tx.Exec(`INSERT INTO refs (meaning_id, target_hanzi) VALUES (?, ?)`, meaningID, ref)
+					if err != nil {
+						tx.Rollback()
+						return totalInserted, fmt.Errorf("insert ref: %w", err)
+					}
+				}
+
+				for _, ex := range m.Examples {
+					chinese, translation := splitExample(ex)
+					_, err = tx.Exec(`INSERT INTO examples (meaning_id, chinese, translation) VALUES (?, ?, ?)`, meaningID, chinese, translation)
+					if err != nil {
+						tx.Rollback()
+						return totalInserted, fmt.Errorf("insert example: %w", err)
+					}
+				}
+			}
+		}
+
+		if err = tx.Commit(); err != nil {
+			return totalInserted, fmt.Errorf("commit: %w", err)
+		}
+
+		fmt.Printf("Batch %d/%d: inserted %d entries (total: %d)\n", batchNum+1, totalBatches, len(batch), totalInserted)
+	}
+
+	return totalInserted, nil
+}
+
+func (s *DB) InsertEntries(entries []parser.Entry, batchSize int) (int, error) {
+	return s.InsertEntriesBatch(entries, batchSize)
 }
 
 func (s *DB) ResolveRefs() error {

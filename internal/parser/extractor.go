@@ -19,6 +19,30 @@ type Meaning struct {
 	Order        int      `json:"order"`
 }
 
+func truncateMeaning(text string) string {
+	if idx := strings.Index(text, " _"); idx > 0 {
+		text = text[:idx]
+	}
+	if len(text) > 300 {
+		text = text[:300]
+	}
+	return strings.TrimSpace(text)
+}
+
+func hasChineseAndRussian(text string) bool {
+	hasCN := false
+	hasRU := false
+	for _, r := range text {
+		if r >= 0x4E00 && r <= 0x9FFF {
+			hasCN = true
+		}
+		if (r >= 0x0410 && r <= 0x044F) || r == 0x0401 || r == 0x0451 {
+			hasRU = true
+		}
+	}
+	return hasCN && hasRU
+}
+
 func extractAllText(node *Node, depth int) string {
 	if depth > 100 {
 		return ""
@@ -43,7 +67,7 @@ func ExtractEntries(root *Node, limit int) []Entry {
 	flushEntry := func() {
 		if currentEntry != nil && pendingMeaning != "" {
 			currentEntry.Meanings = append(currentEntry.Meanings, Meaning{
-				Text:  strings.TrimSpace(pendingMeaning),
+				Text:  truncateMeaning(pendingMeaning),
 				Order: len(currentEntry.Meanings),
 			})
 		}
@@ -78,6 +102,10 @@ func ExtractEntries(root *Node, limit int) []Entry {
 					continue
 				}
 
+				if hasChineseAndRussian(line) {
+					continue
+				}
+
 				if HasChinese(line) {
 					hanzi, pinyin := SplitHanziPinyin(line)
 					if pinyin != "" {
@@ -95,6 +123,10 @@ func ExtractEntries(root *Node, limit int) []Entry {
 					} else {
 						pendingHanzi = hanzi
 					}
+					continue
+				}
+
+				if hasChineseAndRussian(line) {
 					continue
 				}
 
@@ -149,7 +181,7 @@ func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
 	}
 
 	flushCurrent := func() {
-		current.Text = strings.TrimSpace(current.Text)
+		current.Text = truncateMeaning(current.Text)
 		if current.Text != "" || len(current.Examples) > 0 {
 			current.Order = len(meanings)
 			meanings = append(meanings, current)
@@ -162,7 +194,7 @@ func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
 			flushCurrent()
 			return
 		}
-		current.Text = strings.TrimSpace(current.Text)
+		current.Text = truncateMeaning(current.Text)
 		if current.Text != "" || len(current.Examples) > 0 {
 			current.Order = len(entry.Meanings)
 			entry.Meanings = append(entry.Meanings, current)
@@ -173,6 +205,9 @@ func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
 	addText := func(text string) {
 		text = strings.TrimSpace(text)
 		if text == "" {
+			return
+		}
+		if hasChineseAndRussian(text) {
 			return
 		}
 		skipSpace := text == "(" || text == ")" || strings.HasPrefix(text, "(")

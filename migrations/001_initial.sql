@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS entries (
     id SERIAL PRIMARY KEY,
     hanzi TEXT NOT NULL UNIQUE,
     pinyin TEXT,
-    pinyin_normalized TEXT
+    pinyin_normalized TEXT,
+    frequency INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_entries_hanzi ON entries(hanzi);
 CREATE INDEX IF NOT EXISTS idx_entries_pinyin_norm ON entries(pinyin_normalized);
