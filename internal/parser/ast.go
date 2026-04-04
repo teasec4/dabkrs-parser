@@ -15,6 +15,7 @@ const (
 	NodeContainer          // c
 	NodeExample            // ex
 	NodeStar               // [*]  (используется для примеров/маркеров)
+	NodeMeaning            // m1, m2, m3... (для значений)
 	NodeUnknown
 )
 
@@ -38,6 +39,8 @@ func tagToNodeType(tag string) NodeType {
 		return NodeExample
 	case "*":
 		return NodeStar
+	case "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9":
+		return NodeMeaning
 	default:
 		return NodeUnknown
 	}
@@ -116,6 +119,8 @@ func (n NodeType) String() string {
 		return "EXAMPLE"
 	case NodeStar:
 		return "STAR"
+	case NodeMeaning:
+		return "MEANING"
 	default:
 		return "UNKNOWN"
 	}

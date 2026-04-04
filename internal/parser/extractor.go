@@ -55,6 +55,21 @@ func hasChineseAndRussian(text string) bool {
 	return hasCN && hasRU
 }
 
+func isRussianOnlyMeaning(text string) bool {
+	hasRU := false
+	hasNonRussian := false
+
+	for _, r := range text {
+		if (r >= 0x0410 && r <= 0x044F) || r == 0x0401 || r == 0x0451 {
+			hasRU = true
+		} else if r != ' ' && r != ',' && r != '.' && r != '(' && r != ')' && r != '[' && r != ']' && r != ';' && r != ':' && r != '-' && r != '\'' && r != '"' && r != '\n' && r != '\r' && r != '\t' && !(r >= '0' && r <= '9') {
+			hasNonRussian = true
+		}
+	}
+
+	return hasRU && !hasNonRussian
+}
+
 func extractAllText(node *Node, depth int) string {
 	if depth > 100 {
 		return ""
@@ -133,7 +148,7 @@ func ExtractEntries(root *Node, limit int) []Entry {
 
 				if HasChinese(line) {
 					hanzi, pinyin := SplitHanziPinyin(line)
-					if pinyin != "" {
+					if pinyin != "" && !HasChinese(pinyin) && IsPinyin(pinyin) {
 						flushEntry()
 						entry := Entry{
 							Hanzi:            hanzi,
@@ -156,13 +171,31 @@ func ExtractEntries(root *Node, limit int) []Entry {
 						pendingHanzi = ""
 						pendingMeaning = ""
 					} else {
+						if currentEntry != nil {
+							flushEntry()
+							currentEntry = nil
+						}
 						pendingHanzi = hanzi
+						pendingMeaning = ""
 					}
 					continue
 				}
 
 				if hasChineseAndRussian(line) {
 					continue
+				}
+
+				if pendingHanzi != "" && currentEntry == nil {
+					if !isRussianOnlyMeaning(line) {
+						flushEntry()
+						entry := Entry{
+							Hanzi:    pendingHanzi,
+							Meanings: []Meaning{},
+						}
+						entries = append(entries, entry)
+						currentEntry = &entries[len(entries)-1]
+					}
+					pendingHanzi = ""
 				}
 
 				if currentEntry != nil {
@@ -178,6 +211,41 @@ func ExtractEntries(root *Node, limit int) []Entry {
 			if ref != "" && HasChinese(ref) {
 				pendingRefs = append(pendingRefs, ref)
 			}
+
+		case NodeMeaning:
+			if pendingHanzi != "" && currentEntry == nil {
+				flushEntry()
+				entry := Entry{
+					Hanzi:    pendingHanzi,
+					Meanings: []Meaning{},
+				}
+				entries = append(entries, entry)
+				currentEntry = &entries[len(entries)-1]
+				pendingHanzi = ""
+			}
+			if currentEntry != nil && pendingMeaning != "" {
+				parts := splitMeanings(pendingMeaning)
+				for i, part := range parts {
+					m := Meaning{
+						Text:  part,
+						Order: len(currentEntry.Meanings) + i,
+					}
+					if len(pendingRefs) > 0 {
+						m.Refs = make([]string, len(pendingRefs))
+						copy(m.Refs, pendingRefs)
+					}
+					currentEntry.Meanings = append(currentEntry.Meanings, m)
+				}
+				pendingRefs = nil
+			}
+			pendingMeaning = ""
+			for _, child := range node.Children {
+				extractTextRecursive(child)
+			}
+
+		case NodeExample:
+			pendingHanzi = ""
+			pendingMeaning = ""
 
 		case NodeUnknown:
 			for _, child := range node.Children {
@@ -284,7 +352,7 @@ func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
 						continue
 					}
 					hanzi, pinyin := SplitHanziPinyin(line)
-					if pinyin != "" && HasChinese(hanzi) {
+					if pinyin != "" && HasChinese(hanzi) && IsPinyin(pinyin) {
 						flushCurrentToEntry(pendingEntry)
 						if pendingEntry != nil {
 							embedded = append(embedded, *pendingEntry)
@@ -379,7 +447,6 @@ func IsPinyin(s string) bool {
 		return false
 	}
 	hasLetter := false
-	hasTone := false
 
 	toneChars := "āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ"
 
@@ -388,20 +455,19 @@ func IsPinyin(s string) bool {
 			hasLetter = true
 			continue
 		}
-		if r == '\'' || r == 0x2019 || r == ' ' {
+		if r == '\'' || r == 0x2019 || r == ' ' || r == ',' || r == '.' || r == '-' {
 			continue
 		}
 		if r >= 0x00C0 && r <= 0x024F {
 			continue
 		}
 		if strings.ContainsRune(toneChars, r) {
-			hasTone = true
 			continue
 		}
 		return false
 	}
 
-	return hasLetter && (hasTone || containsPinyinPattern(s))
+	return hasLetter
 }
 
 func containsPinyinPattern(s string) bool {

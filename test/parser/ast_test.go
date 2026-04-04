@@ -92,8 +92,8 @@ func TestParse_UnknownTags(t *testing.T) {
 		t.Fatalf("expected 1 child, got %d", len(ast.Children))
 	}
 
-	if ast.Children[0].Type != parser.NodeUnknown {
-		t.Errorf("expected UNKNOWN for [m1], got %v", ast.Children[0].Type)
+	if ast.Children[0].Type != parser.NodeMeaning {
+		t.Errorf("expected MEANING for [m1], got %v", ast.Children[0].Type)
 	}
 }
 
@@ -184,14 +184,14 @@ func TestParse_RealDSLntry(t *testing.T) {
 		t.Errorf("expected 1 child, got %d", len(ast.Children))
 	}
 
-	unknown := ast.Children[0]
-	if unknown.Type != parser.NodeUnknown {
-		t.Errorf("expected UNKNOWN, got %v", unknown.Type)
+	meaning := ast.Children[0]
+	if meaning.Type != parser.NodeMeaning {
+		t.Errorf("expected MEANING, got %v", meaning.Type)
 	}
 
 	// Should have PARAGRAPH, TEXT, TEXT (with italic inside)
-	if len(unknown.Children) < 3 {
-		t.Errorf("expected at least 3 children in UNKNOWN, got %d", len(unknown.Children))
+	if len(meaning.Children) < 3 {
+		t.Errorf("expected at least 3 children in MEANING, got %d", len(meaning.Children))
 	}
 }
 
