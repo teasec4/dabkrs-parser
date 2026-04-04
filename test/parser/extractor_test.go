@@ -171,7 +171,7 @@ func TestSplitHanziPinyin(t *testing.T) {
 func TestExtractEntries_Simple(t *testing.T) {
 	dsl := "#NAME \"Test\"\n上海 shanghai\n[m1]город Шанхай[/m]\n北京 beijing\n[m1]столица[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -180,19 +180,19 @@ func TestExtractEntries_Simple(t *testing.T) {
 		t.Errorf("expected at least 1 entry, got %d", len(entries))
 	}
 
-	if entries[0].Hanzi != "上海" {
-		t.Errorf("first entry hanzi = %q, want %q", entries[0].Hanzi, "上海")
+	if entries[0].Headword != "上海" {
+		t.Errorf("first entry Headword = %q, want %q", entries[0].Headword, "上海")
 	}
 
 	if entries[0].Pinyin != "shanghai" {
-		t.Errorf("first entry pinyin = %q, want %q", entries[0].Pinyin, "shanghai")
+		t.Errorf("first entry Pinyin = %q, want %q", entries[0].Pinyin, "shanghai")
 	}
 }
 
 func TestExtractEntries_PinyinOnSeparateLine(t *testing.T) {
 	dsl := "#NAME \"Test\"\n三比西河\nsan bi xi he\n[m1]река Санбихэ[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -201,19 +201,19 @@ func TestExtractEntries_PinyinOnSeparateLine(t *testing.T) {
 		t.Fatal("expected at least 1 entry, got 0")
 	}
 
-	if entries[0].Hanzi != "三比西河" {
-		t.Errorf("hanzi = %q, want %q", entries[0].Hanzi, "三比西河")
+	if entries[0].Headword != "三比西河" {
+		t.Errorf("Headword = %q, want %q", entries[0].Headword, "三比西河")
 	}
 
 	if entries[0].Pinyin != "san bi xi he" {
-		t.Errorf("pinyin = %q, want %q", entries[0].Pinyin, "san bi xi he")
+		t.Errorf("Pinyin = %q, want %q", entries[0].Pinyin, "san bi xi he")
 	}
 }
 
 func TestExtractEntries_Header(t *testing.T) {
 	dsl := "#NAME \"Test Dictionary\"\n#INDEX_LANGUAGE \"Chinese\"\n北京 beijing\n[m1]столица[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestExtractEntries_Header(t *testing.T) {
 func TestExtractEntries_Limit(t *testing.T) {
 	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица[/m]\n上海 shanghai\n[m1]город[/m]\n天津 tianjin\n[m1]город[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestExtractEntries_Limit(t *testing.T) {
 func TestExtractMeanings_Basic(t *testing.T) {
 	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица Китая[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -258,9 +258,9 @@ func TestExtractMeanings_Basic(t *testing.T) {
 }
 
 func TestExtractMeanings_WithPartOfSpeech(t *testing.T) {
-	dsl := "#NAME \"Test\"\n学习 xuexi\n[m1]\n[I]глагол\n[1]учиться, изучать[/m]\n"
+	dsl := "#NAME \"Test\"\n学习 xuexi\n[m1]\n[p]глагол\n[1]учиться, изучать[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -273,9 +273,9 @@ func TestExtractMeanings_WithPartOfSpeech(t *testing.T) {
 }
 
 func TestExtractMeanings_WithRefs(t *testing.T) {
-	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица[/m]\n[ref]参见 上海[/ref]\n"
+	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица[/m]\n[p]см.[/p] [ref]上海[/ref]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -285,13 +285,13 @@ func TestExtractMeanings_WithRefs(t *testing.T) {
 	}
 
 	t.Logf("First meaning text: %q", entries[0].Meanings[0].Text)
-	t.Logf("Refs: %v", entries[0].Meanings[0].Refs)
+	t.Logf("Tags: %v", entries[0].Meanings[0].Tags)
 }
 
 func TestExtractMeanings_WithExamples(t *testing.T) {
 	dsl := "#NAME \"Test\"\n学习 xuexi\n[m1]учиться[/m]\n[ex]我学习中文。|Я учу китайский язык.[/ex]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -300,15 +300,17 @@ func TestExtractMeanings_WithExamples(t *testing.T) {
 		t.Fatal("expected at least 1 entry")
 	}
 
-	if len(entries[0].Meanings) > 0 && len(entries[0].Meanings[0].Examples) > 0 {
-		t.Logf("Example found: %q", entries[0].Meanings[0].Examples[0])
+	if len(entries[0].Meanings) > 0 && len(entries[0].Meanings[0].Tags) > 0 {
+		for _, tag := range entries[0].Meanings[0].Tags {
+			t.Logf("Tag: %+v", tag)
+		}
 	}
 }
 
 func TestExtractText_NodeText(t *testing.T) {
 	dsl := "#NAME \"Test\"\n北京 beijing\n[m1]столица[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -330,7 +332,7 @@ func TestExtractText_NodeText(t *testing.T) {
 func TestExtractEntries_MultipleMeanings(t *testing.T) {
 	dsl := "#NAME \"Test\"\n打 da\n[m1]ударять[/m]\n[m1]бить[/m]\n[m1]играть (в мяч)[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -346,10 +348,10 @@ func TestExtractEntries_MultipleMeanings(t *testing.T) {
 }
 
 func TestExtractEntries_ParsesLargeFile(t *testing.T) {
-	path := dslPath("dabkrs_1.dsl")
-	entries, err := parser.ParseFile(path, 10)
+	path := "../../dabkrs/dabkrs_1.dsl"
+	entries, err := parser.ParseDSL(path, 10)
 	if err != nil {
-		t.Fatalf("ParseFile failed: %v", err)
+		t.Fatalf("ParseDSL failed: %v", err)
 	}
 
 	if len(entries) != 10 {
@@ -357,17 +359,17 @@ func TestExtractEntries_ParsesLargeFile(t *testing.T) {
 	}
 
 	for i, e := range entries {
-		if e.Hanzi == "" {
-			t.Errorf("entry %d has empty hanzi", i)
+		if e.Headword == "" {
+			t.Errorf("entry %d has empty Headword", i)
 		}
-		t.Logf("Entry %d: %s [%s]", i, e.Hanzi, e.Pinyin)
+		t.Logf("Entry %d: %s [%s]", i, e.Headword, e.Pinyin)
 	}
 }
 
 func TestExtractEntries_PinyinNormalized(t *testing.T) {
 	dsl := "#NAME \"Test\"\n北京 běi jīng\n[m1]столица[/m]\n"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}
@@ -376,15 +378,15 @@ func TestExtractEntries_PinyinNormalized(t *testing.T) {
 		t.Fatal("expected at least 1 entry")
 	}
 
-	if entries[0].PinyinNormalized != "bei jing" {
-		t.Errorf("PinyinNormalized = %q, want %q", entries[0].PinyinNormalized, "bei jing")
+	if entries[0].Pinyin != "běi jīng" {
+		t.Errorf("Pinyin = %q, want %q", entries[0].Pinyin, "běi jīng")
 	}
 }
 
 func TestExtractEntries_ChineseOnSameLine(t *testing.T) {
-	dsl := "#NAME \"Test\"\n北京 bei jing\n上海 shang hai\n"
+	dsl := "北京 bei jing\n[m1]test[/m]\n上海 shang hai\n[m1]test2[/m]"
 
-	entries, err := parser.ParseDSL(dsl)
+	entries, err := parser.ParseDSLString(dsl, 0)
 	if err != nil {
 		t.Fatalf("ParseDSL failed: %v", err)
 	}

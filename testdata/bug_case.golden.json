@@ -1,0 +1,24 @@
+[
+  {
+    "Headword": "北京",
+    "Pinyin": "beijing",
+    "PinyinNormalized": "beijing",
+    "Meanings": [
+      {
+        "Level": 1,
+        "Text": "Самаринда ( )",
+        "Tags": [
+          {
+            "Type": "p",
+            "Value": "г."
+          },
+          {
+            "Type": "i",
+            "Value": "Индонезия"
+          }
+        ],
+        "Order": 0
+      }
+    ]
+  }
+]

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -22,7 +23,7 @@ const (
 type Node struct {
 	Type     NodeType
 	Value    string
-	Level int
+	Level    int
 	Children []*Node
 }
 
@@ -58,8 +59,6 @@ func Parse(tokens []Token) *Node {
 			node := &Node{
 				Type:  NodeText,
 				Value: tok.Value,
-				Level: level,
-			
 			}
 			current := stack[len(stack)-1]
 			current.Children = append(current.Children, node)
@@ -74,6 +73,7 @@ func Parse(tokens []Token) *Node {
 			node := &Node{
 				Type:  nodeType,
 				Value: tok.Value,
+				Level: level,
 			}
 
 			current := stack[len(stack)-1]
@@ -82,21 +82,40 @@ func Parse(tokens []Token) *Node {
 
 		case TokenTagClose:
 			if len(stack) > 1 {
-	        top := stack[len(stack)-1]
-	
-		        if strings.EqualFold(top.Value, tok.Value) {
-		            stack = stack[:len(stack)-1]
-		        } else {
-		            // ❗ несоответствие тегов
-		            // можно:
-		            // 1. игнорировать
-		            // 2. логировать
-		            // 3. пытаться чинить стек
-		        }
-		    }
+				top := stack[len(stack)-1]
+
+				topTag := top.Value
+				closeTag := tok.Value
+
+				// Check for exact match first (case-insensitive)
+				if strings.EqualFold(topTag, closeTag) {
+					stack = stack[:len(stack)-1]
+					continue
+				}
+
+				// Handle m/m1/m2 style tags - allow generic "m" to close "mN"
+				if strings.HasPrefix(topTag, "m") && strings.HasPrefix(closeTag, "m") {
+					topNum := extractNum(topTag)
+					closeNum := extractNum(closeTag)
+					// "m" matches any "mN", or exact number match
+					if (closeNum == 0 && topNum > 0) || (topNum == closeNum && topNum > 0) {
+						stack = stack[:len(stack)-1]
+					}
+				}
+			}
 		}
 	}
 	return root
+}
+
+func extractNum(tag string) int {
+	num := 0
+	for _, c := range tag {
+		if c >= '0' && c <= '9' {
+			num = num*10 + int(c-'0')
+		}
+	}
+	return num
 }
 
 func (n NodeType) String() string {
@@ -120,4 +139,12 @@ func (n NodeType) String() string {
 	default:
 		return "UNKNOWN"
 	}
+}
+
+func DumpAST(root *Node) string {
+	data, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }

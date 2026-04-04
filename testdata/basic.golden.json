@@ -1,0 +1,28 @@
+[
+  {
+    "Headword": "北京",
+    "Pinyin": "beijing",
+    "PinyinNormalized": "beijing",
+    "Meanings": [
+      {
+        "Level": 1,
+        "Text": "столица Китая",
+        "Tags": [],
+        "Order": 0
+      }
+    ]
+  },
+  {
+    "Headword": "上海",
+    "Pinyin": "shanghai",
+    "PinyinNormalized": "shanghai",
+    "Meanings": [
+      {
+        "Level": 1,
+        "Text": "крупный город",
+        "Tags": [],
+        "Order": 0
+      }
+    ]
+  }
+]

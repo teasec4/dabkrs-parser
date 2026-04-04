@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"encoding/json"
 	"io"
 	"strings"
 )
@@ -19,6 +20,16 @@ type Token struct {
 	Value string
 }
 
+func Lex(s string) []Token {
+	ch := make(chan Token, 256)
+	go LexStream(strings.NewReader(s), ch)
+
+	var tokens []Token
+	for tok := range ch {
+		tokens = append(tokens, tok)
+	}
+	return tokens
+}
 
 func LexStream(r io.Reader, out chan<- Token) {
 	reader := bufio.NewReader(r)
@@ -30,13 +41,18 @@ func LexStream(r io.Reader, out chan<- Token) {
 		}
 
 		if ch == '[' {
-			// fix problem tag 
 			tag, err := reader.ReadString(']')
 			if err != nil {
-			    out <- Token{Type: TokenText, Value: "[" + tag}
-			    continue
+				out <- Token{Type: TokenText, Value: "[" + tag}
+				continue
 			}
 			tag = strings.TrimSuffix(tag, "]")
+
+			if tag == "" {
+				out <- Token{Type: TokenText, Value: "[]"}
+				continue
+			}
+
 			if strings.HasPrefix(tag, "/") {
 				out <- Token{Type: TokenTagClose, Value: tag[1:]}
 			} else {
@@ -59,7 +75,7 @@ func LexStream(r io.Reader, out chan<- Token) {
 
 			text := sb.String()
 			if strings.TrimSpace(text) != "" {
-			    out <- Token{Type: TokenText, Value: text}
+				out <- Token{Type: TokenText, Value: text}
 			}
 		}
 	}
@@ -78,4 +94,12 @@ func (t TokenType) String() string {
 	default:
 		return "UNKNOWN"
 	}
+}
+
+func DumpTokens(tokens []Token) string {
+	data, err := json.MarshalIndent(tokens, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"strings"
 )
 
@@ -10,62 +11,16 @@ func ExtractEntries(root *Node, limit int) []Entry {
 	var currentEntry *Entry
 
 	processEntry := func() {
-		if currentEntry != nil && len(currentEntry.Meanings) > 0 {
+		if currentEntry != nil {
 			entries = append(entries, *currentEntry)
 		}
 		currentEntry = nil
 	}
 
-	processMeaning := func(node *Node) {
-		if currentEntry != nil {
-			meaning := extractMeaning(node, len(currentEntry.Meanings))
-			if meaning.Text != "" || len(meaning.Tags) > 0 {
-				currentEntry.Meanings = append(currentEntry.Meanings, meaning)
-			}
-		}
-	}
-
-	for i := 0; i < len(root.Children); i++ {
-		child := root.Children[i]
-
-		switch child.Type {
-		case NodeText:
-			text := strings.TrimSpace(child.Value)
-			if text == "" || strings.HasPrefix(text, "#") {
-				continue
-			}
-
-			lines := strings.Split(text, "\n")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "#") {
-					continue
-				}
-
-				if HasChinese(line) {
-					headword, pinyin := SplitHanziPinyin(line)
-					if pinyin == "" {
-						headword = line
-					}
-					processEntry()
-					currentEntry = &Entry{
-						Headword: headword,
-						Pinyin:   pinyin,
-						Meanings: []Meaning{},
-					}
-				} else if currentEntry != nil {
-					line = strings.TrimSpace(line)
-					if line == "_" {
-						currentEntry.Pinyin = ""
-					} else if IsPinyin(line) {
-						currentEntry.Pinyin = line
-					}
-				}
-			}
-
-		case NodeMeaning:
-			processMeaning(child)
-		}
+	// Process direct children only (not deeply nested)
+	// This preserves structure while allowing flexible parsing
+	for _, child := range root.Children {
+		processNode(child, &currentEntry, &entries)
 	}
 
 	processEntry()
@@ -75,6 +30,61 @@ func ExtractEntries(root *Node, limit int) []Entry {
 	}
 
 	return entries
+}
+
+func processNode(node *Node, currentEntry **Entry, entries *[]Entry) {
+	switch node.Type {
+	case NodeText:
+		lines := strings.Split(node.Value, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+
+			if HasChinese(line) {
+				headword, pinyin := SplitHanziPinyin(line)
+				if pinyin == "" {
+					headword = line
+				}
+				if *currentEntry != nil && len((*currentEntry).Meanings) > 0 {
+					*entries = append(*entries, **currentEntry)
+				}
+				*currentEntry = &Entry{
+					Headword:         headword,
+					Pinyin:           pinyin,
+					PinyinNormalized: NormalizePinyin(pinyin),
+					Meanings:         []Meaning{},
+				}
+			} else if *currentEntry != nil {
+				line = strings.TrimSpace(line)
+				if line == "_" {
+					(*currentEntry).Pinyin = ""
+					(*currentEntry).PinyinNormalized = ""
+				} else if IsPinyin(line) {
+					(*currentEntry).Pinyin = line
+					(*currentEntry).PinyinNormalized = NormalizePinyin(line)
+				}
+			}
+		}
+
+	case NodeMeaning:
+		if *currentEntry != nil {
+			meaning := extractMeaning(node, len((*currentEntry).Meanings))
+			if meaning.Text != "" || len(meaning.Tags) > 0 {
+				(*currentEntry).Meanings = append((*currentEntry).Meanings, meaning)
+			}
+		}
+
+	default:
+		// Other node types - check if they contain text content that could be pinyin
+		if *currentEntry != nil {
+			text := extractTextContent(node)
+			if text != "" && IsPinyin(text) {
+				(*currentEntry).Pinyin = text
+			}
+		}
+	}
 }
 
 // extractMeaning extracts a single meaning from AST node
@@ -216,4 +226,12 @@ func IsPinyin(s string) bool {
 		return false
 	}
 	return hasLetter
+}
+
+func DumpEntries(entries []Entry) string {
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
 }

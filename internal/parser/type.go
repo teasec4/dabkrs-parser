@@ -1,9 +1,10 @@
 package parser
 
 type Entry struct {
-	Headword string // 三比西河
-	Pinyin   string // sānbǐxīhé
-	Meanings []Meaning
+	Headword         string // 三比西河
+	Pinyin           string // sānbǐxīhé
+	PinyinNormalized string // sanbixihe
+	Meanings         []Meaning
 }
 
 type Meaning struct {
