@@ -9,23 +9,25 @@ type NodeType int
 
 const (
 	NodeText      NodeType = iota
-	NodeParagraph          // p
-	NodeItalic             // i
-	NodeRef                // ref
-	NodeContainer          // c
-	NodeExample            // ex
-	NodeStar               // [*]  (используется для примеров/маркеров)
-	NodeMeaning            // m1, m2, m3... (для значений)
+	NodeParagraph          // [p]
+	NodeItalic             // [i]
+	NodeRef                // [ref]
+	NodeContainer          // [c]
+	NodeExample            // [ex]
+	NodeStar               // [*]
+	NodeMeaning            // [m1], [m2], [m3]...
 	NodeUnknown
 )
 
 type Node struct {
 	Type     NodeType
-	Value    string // только для текста
+	Value    string
+	Level int
 	Children []*Node
 }
 
 func tagToNodeType(tag string) NodeType {
+	tag = strings.ToLower(tag)
 	switch tag {
 	case "p":
 		return NodeParagraph
@@ -56,20 +58,22 @@ func Parse(tokens []Token) *Node {
 			node := &Node{
 				Type:  NodeText,
 				Value: tok.Value,
+				Level: level,
+			
 			}
 			current := stack[len(stack)-1]
 			current.Children = append(current.Children, node)
 
 		case TokenTagOpen:
 			nodeType := tagToNodeType(tok.Value)
-
-			node := &Node{
-				Type: nodeType,
+			level := 0
+			if strings.HasPrefix(tok.Value, "m") {
+				fmt.Sscanf(tok.Value, "m%d", &level)
 			}
 
-			// Специальная обработка для [ref] — сохраняем имя ссылки
-			if nodeType == NodeRef {
-				node.Value = tok.Value // можно позже добавить атрибуты
+			node := &Node{
+				Type:  nodeType,
+				Value: tok.Value,
 			}
 
 			current := stack[len(stack)-1]
@@ -78,29 +82,21 @@ func Parse(tokens []Token) *Node {
 
 		case TokenTagClose:
 			if len(stack) > 1 {
-				// Проверяем, что закрывается правильный тег (опционально)
-				stack = stack[:len(stack)-1] // pop
-			}
+	        top := stack[len(stack)-1]
+	
+		        if strings.EqualFold(top.Value, tok.Value) {
+		            stack = stack[:len(stack)-1]
+		        } else {
+		            // ❗ несоответствие тегов
+		            // можно:
+		            // 1. игнорировать
+		            // 2. логировать
+		            // 3. пытаться чинить стек
+		        }
+		    }
 		}
 	}
 	return root
-}
-
-func PrintAST(node *Node, indent int) {
-	prefix := strings.Repeat("  ", indent)
-
-	switch node.Type {
-	case NodeText:
-		fmt.Printf("%sTEXT: %q\n", prefix, node.Value)
-	case NodeRef:
-		fmt.Printf("%sREF: %s\n", prefix, node.Value)
-	default:
-		fmt.Printf("%s%s\n", prefix, node.Type)
-	}
-
-	for _, child := range node.Children {
-		PrintAST(child, indent+1)
-	}
 }
 
 func (n NodeType) String() string {
@@ -111,10 +107,10 @@ func (n NodeType) String() string {
 		return "PARAGRAPH"
 	case NodeItalic:
 		return "ITALIC"
-	case NodeContainer:
-		return "CONTAINER"
 	case NodeRef:
 		return "REF"
+	case NodeContainer:
+		return "CONTAINER"
 	case NodeExample:
 		return "EXAMPLE"
 	case NodeStar:

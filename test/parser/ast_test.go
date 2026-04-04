@@ -41,6 +41,11 @@ func TestParse_BasicTags(t *testing.T) {
 			input:    "[*]marker",
 			expected: []parser.NodeType{parser.NodeStar},
 		},
+		{
+			name:     "meaning",
+			input:    "[m]some meanign[/m]",
+			expected: []parser.NodeType{parser.NodeUnknown},
+		},
 	}
 
 	for _, tt := range tests {

@@ -19,47 +19,6 @@ type Token struct {
 	Value string
 }
 
-func Lex(input string) []Token {
-	var tokens []Token
-	i := 0
-	n := len(input)
-
-	for i < n {
-		if input[i] == '[' {
-			j := strings.IndexByte(input[i:], ']')
-			if j == -1 {
-				tokens = append(tokens, Token{Type: TokenText, Value: input[i:]})
-				break
-			}
-			tagContent := input[i+1 : i+j]
-
-			if strings.HasPrefix(tagContent, "/") {
-				tokens = append(tokens, Token{
-					Type:  TokenTagClose,
-					Value: strings.TrimPrefix(tagContent, "/"),
-				})
-			} else {
-				tokens = append(tokens, Token{
-					Type:  TokenTagOpen,
-					Value: tagContent,
-				})
-			}
-			i += j + 1
-		} else {
-			j := strings.IndexByte(input[i:], '[')
-			if j == -1 {
-				j = n - i
-			}
-			text := input[i : i+j]
-			if text != "" {
-				tokens = append(tokens, Token{Type: TokenText, Value: text})
-			}
-			i += j
-		}
-	}
-
-	return tokens
-}
 
 func LexStream(r io.Reader, out chan<- Token) {
 	reader := bufio.NewReader(r)
@@ -71,7 +30,12 @@ func LexStream(r io.Reader, out chan<- Token) {
 		}
 
 		if ch == '[' {
-			tag, _ := reader.ReadString(']')
+			// fix problem tag 
+			tag, err := reader.ReadString(']')
+			if err != nil {
+			    out <- Token{Type: TokenText, Value: "[" + tag}
+			    continue
+			}
 			tag = strings.TrimSuffix(tag, "]")
 			if strings.HasPrefix(tag, "/") {
 				out <- Token{Type: TokenTagClose, Value: tag[1:]}
@@ -93,7 +57,10 @@ func LexStream(r io.Reader, out chan<- Token) {
 				sb.WriteRune(ch)
 			}
 
-			out <- Token{Type: TokenText, Value: sb.String()}
+			text := sb.String()
+			if strings.TrimSpace(text) != "" {
+			    out <- Token{Type: TokenText, Value: text}
+			}
 		}
 	}
 

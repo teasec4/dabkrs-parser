@@ -4,271 +4,71 @@ import (
 	"strings"
 )
 
-type Entry struct {
-	Hanzi            string    `json:"hanzi"`
-	Pinyin           string    `json:"pinyin"`
-	PinyinNormalized string    `json:"pinyin_normalized"`
-	Meanings         []Meaning `json:"meanings"`
-}
-
-type Meaning struct {
-	Text         string   `json:"text"`
-	PartOfSpeech string   `json:"part_of_speech,omitempty"`
-	Refs         []string `json:"refs,omitempty"`
-	Examples     []string `json:"examples,omitempty"`
-	Order        int      `json:"order"`
-}
-
-func splitMeanings(text string) []string {
-	text = strings.TrimSpace(text)
-	if text == "" || text == "_" {
-		return nil
-	}
-
-	var result []string
-	parts := strings.Split(text, " _ ")
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		p = strings.Trim(p, "_")
-		if p != "" && p != "_" && !strings.HasPrefix(p, "_") {
-			result = append(result, p)
-		}
-	}
-
-	if len(result) == 0 {
-		return nil
-	}
-	return result
-}
-
-func hasChineseAndRussian(text string) bool {
-	hasCN := false
-	hasRU := false
-	for _, r := range text {
-		if r >= 0x4E00 && r <= 0x9FFF {
-			hasCN = true
-		}
-		if (r >= 0x0410 && r <= 0x044F) || r == 0x0401 || r == 0x0451 {
-			hasRU = true
-		}
-	}
-	return hasCN && hasRU
-}
-
-func isRussianOnlyMeaning(text string) bool {
-	hasRU := false
-	hasNonRussian := false
-
-	for _, r := range text {
-		if (r >= 0x0410 && r <= 0x044F) || r == 0x0401 || r == 0x0451 {
-			hasRU = true
-		} else if r != ' ' && r != ',' && r != '.' && r != '(' && r != ')' && r != '[' && r != ']' && r != ';' && r != ':' && r != '-' && r != '\'' && r != '"' && r != '\n' && r != '\r' && r != '\t' && !(r >= '0' && r <= '9') {
-			hasNonRussian = true
-		}
-	}
-
-	return hasRU && !hasNonRussian
-}
-
-func extractAllText(node *Node, depth int) string {
-	if depth > 100 {
-		return ""
-	}
-	if node.Type == NodeText {
-		return node.Value
-	}
-	var result string
-	for _, c := range node.Children {
-		result += extractAllText(c, depth+1)
-	}
-	return result
-}
-
+// ExtractEntries extracts dictionary entries from AST
 func ExtractEntries(root *Node, limit int) []Entry {
 	var entries []Entry
-
-	var pendingHanzi string
-	var pendingMeaning string
-	var pendingRefs []string
 	var currentEntry *Entry
 
-	flushEntry := func() {
-		if currentEntry != nil && (pendingMeaning != "" || len(pendingRefs) > 0) {
-			if pendingMeaning != "" {
-				parts := splitMeanings(pendingMeaning)
-				for i, part := range parts {
-					m := Meaning{
-						Text:  part,
-						Order: i,
-					}
-					if len(pendingRefs) > 0 {
-						m.Refs = make([]string, len(pendingRefs))
-						copy(m.Refs, pendingRefs)
-					}
-					currentEntry.Meanings = append(currentEntry.Meanings, m)
-				}
-			} else if len(pendingRefs) > 0 {
-				currentEntry.Meanings = append(currentEntry.Meanings, Meaning{
-					Refs:  pendingRefs,
-					Order: 0,
-				})
-			}
+	processEntry := func() {
+		if currentEntry != nil && len(currentEntry.Meanings) > 0 {
+			entries = append(entries, *currentEntry)
 		}
-		pendingRefs = nil
+		currentEntry = nil
 	}
 
-	var extractTextRecursive func(node *Node)
-	extractTextRecursive = func(node *Node) {
-		switch node.Type {
+	processMeaning := func(node *Node) {
+		if currentEntry != nil {
+			meaning := extractMeaning(node, len(currentEntry.Meanings))
+			if meaning.Text != "" || len(meaning.Tags) > 0 {
+				currentEntry.Meanings = append(currentEntry.Meanings, meaning)
+			}
+		}
+	}
+
+	for i := 0; i < len(root.Children); i++ {
+		child := root.Children[i]
+
+		switch child.Type {
 		case NodeText:
-			lines := strings.Split(node.Value, "\n")
+			text := strings.TrimSpace(child.Value)
+			if text == "" || strings.HasPrefix(text, "#") {
+				continue
+			}
+
+			lines := strings.Split(text, "\n")
 			for _, line := range lines {
-				line = strings.TrimRight(line, "\r")
 				line = strings.TrimSpace(line)
 				if line == "" || strings.HasPrefix(line, "#") {
 					continue
 				}
 
-				if IsPinyin(line) {
-					if pendingHanzi != "" {
-						flushEntry()
-						entry := Entry{
-							Hanzi:            pendingHanzi,
-							Pinyin:           line,
-							PinyinNormalized: NormalizePinyin(line),
-							Meanings:         []Meaning{},
-						}
-						entries = append(entries, entry)
-						currentEntry = &entries[len(entries)-1]
-						pendingHanzi = ""
-						pendingMeaning = ""
-					}
-					continue
-				}
-
 				if HasChinese(line) {
-					hanzi, pinyin := SplitHanziPinyin(line)
-					if pinyin != "" && !HasChinese(pinyin) && IsPinyin(pinyin) {
-						flushEntry()
-						entry := Entry{
-							Hanzi:            hanzi,
-							Pinyin:           pinyin,
-							PinyinNormalized: NormalizePinyin(pinyin),
-							Meanings:         []Meaning{},
-						}
-						entries = append(entries, entry)
-						currentEntry = &entries[len(entries)-1]
-						pendingHanzi = ""
-						pendingMeaning = ""
-					} else if pendingHanzi == "" && (pendingMeaning != "" || len(pendingRefs) > 0) {
-						flushEntry()
-						entry := Entry{
-							Hanzi:    hanzi,
-							Meanings: []Meaning{},
-						}
-						entries = append(entries, entry)
-						currentEntry = &entries[len(entries)-1]
-						pendingHanzi = ""
-						pendingMeaning = ""
-					} else {
-						if currentEntry != nil {
-							flushEntry()
-							currentEntry = nil
-						}
-						pendingHanzi = hanzi
-						pendingMeaning = ""
+					headword, pinyin := SplitHanziPinyin(line)
+					if pinyin == "" {
+						headword = line
 					}
-					continue
-				}
-
-				if hasChineseAndRussian(line) {
-					continue
-				}
-
-				if pendingHanzi != "" && currentEntry == nil {
-					if !isRussianOnlyMeaning(line) {
-						flushEntry()
-						entry := Entry{
-							Hanzi:    pendingHanzi,
-							Meanings: []Meaning{},
-						}
-						entries = append(entries, entry)
-						currentEntry = &entries[len(entries)-1]
+					processEntry()
+					currentEntry = &Entry{
+						Headword: headword,
+						Pinyin:   pinyin,
+						Meanings: []Meaning{},
 					}
-					pendingHanzi = ""
-				}
-
-				if currentEntry != nil {
-					if pendingMeaning != "" {
-						pendingMeaning += " "
+				} else if currentEntry != nil {
+					line = strings.TrimSpace(line)
+					if line == "_" {
+						currentEntry.Pinyin = ""
+					} else if IsPinyin(line) {
+						currentEntry.Pinyin = line
 					}
-					pendingMeaning += line
 				}
-			}
-
-		case NodeRef:
-			ref := strings.TrimSpace(ExtractText(node))
-			if ref != "" && HasChinese(ref) {
-				pendingRefs = append(pendingRefs, ref)
 			}
 
 		case NodeMeaning:
-			if pendingHanzi != "" && currentEntry == nil {
-				flushEntry()
-				entry := Entry{
-					Hanzi:    pendingHanzi,
-					Meanings: []Meaning{},
-				}
-				entries = append(entries, entry)
-				currentEntry = &entries[len(entries)-1]
-				pendingHanzi = ""
-			}
-			if currentEntry != nil && pendingMeaning != "" {
-				parts := splitMeanings(pendingMeaning)
-				for i, part := range parts {
-					m := Meaning{
-						Text:  part,
-						Order: len(currentEntry.Meanings) + i,
-					}
-					if len(pendingRefs) > 0 {
-						m.Refs = make([]string, len(pendingRefs))
-						copy(m.Refs, pendingRefs)
-					}
-					currentEntry.Meanings = append(currentEntry.Meanings, m)
-				}
-				pendingRefs = nil
-			}
-			pendingMeaning = ""
-			for _, child := range node.Children {
-				extractTextRecursive(child)
-			}
-
-		case NodeExample:
-			pendingHanzi = ""
-			pendingMeaning = ""
-
-		case NodeUnknown:
-			for _, child := range node.Children {
-				extractTextRecursive(child)
-			}
-
-		default:
-			for _, child := range node.Children {
-				extractTextRecursive(child)
-			}
+			processMeaning(child)
 		}
 	}
 
-	extractTextRecursive(root)
-	flushEntry()
-
-	var filtered []Entry
-	for _, e := range entries {
-		if e.Hanzi != "" {
-			filtered = append(filtered, e)
-		}
-	}
-	entries = filtered
+	processEntry()
 
 	if limit > 0 && len(entries) > limit {
 		entries = entries[:limit]
@@ -277,179 +77,128 @@ func ExtractEntries(root *Node, limit int) []Entry {
 	return entries
 }
 
-func ExtractMeaningsWithEmbedded(node *Node) ([]Meaning, []Entry, *Entry) {
-	var meanings []Meaning
-	var embedded []Entry
-	var pendingEntry *Entry
-
-	var current Meaning
-
-	var collectExamples func(n *Node)
-	collectExamples = func(n *Node) {
-		for _, c := range n.Children {
-			if c.Type == NodeExample {
-				ex := strings.TrimSpace(ExtractText(c))
-				if ex != "" {
-					current.Examples = append(current.Examples, ex)
-				}
-			}
-			collectExamples(c)
-		}
+// extractMeaning extracts a single meaning from AST node
+func extractMeaning(node *Node, order int) Meaning {
+	m := Meaning{
+		Level: getLevel(node.Value),
+		Text:  "",
+		Tags:  []Tag{},
+		Order: order,
 	}
 
-	flushCurrent := func() {
-		current.Text = strings.TrimSpace(current.Text)
-		if current.Text != "" || len(current.Examples) > 0 {
-			current.Order = len(meanings)
-			meanings = append(meanings, current)
-		}
-		current = Meaning{}
-	}
-
-	flushCurrentToEntry := func(entry *Entry) {
-		if entry == nil {
-			flushCurrent()
-			return
-		}
-		current.Text = strings.TrimSpace(current.Text)
-		if current.Text != "" || len(current.Examples) > 0 {
-			current.Order = len(entry.Meanings)
-			entry.Meanings = append(entry.Meanings, current)
-		}
-		current = Meaning{}
-	}
-
-	addText := func(text string) {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return
-		}
-		if hasChineseAndRussian(text) {
-			return
-		}
-		skipSpace := text == "(" || text == ")" || strings.HasPrefix(text, "(")
-		if current.Text != "" && !skipSpace {
-			current.Text += " "
-		}
-		current.Text += text
-	}
+	var textParts []string
 
 	for _, child := range node.Children {
 		switch child.Type {
-		case NodeParagraph:
-			text := strings.TrimSpace(ExtractText(child))
-			if text != "" {
-				current.PartOfSpeech = text
-			}
-
 		case NodeText:
-			text := ExtractText(child)
+			text := strings.TrimSpace(child.Value)
 			if text != "" {
-				lines := strings.Split(text, "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if line == "" {
-						continue
-					}
-					hanzi, pinyin := SplitHanziPinyin(line)
-					if pinyin != "" && HasChinese(hanzi) && IsPinyin(pinyin) {
-						flushCurrentToEntry(pendingEntry)
-						if pendingEntry != nil {
-							embedded = append(embedded, *pendingEntry)
-							pendingEntry = nil
-						}
-						pendingEntry = &Entry{
-							Hanzi:            hanzi,
-							Pinyin:           pinyin,
-							PinyinNormalized: NormalizePinyin(pinyin),
-							Meanings:         []Meaning{},
-						}
-					} else if pendingEntry != nil {
-						addText(line)
-					} else {
-						addText(line)
-					}
-				}
+				textParts = append(textParts, text)
 			}
 
-		case NodeRef:
-			ref := strings.TrimSpace(ExtractText(child))
-			if ref != "" {
-				current.Refs = append(current.Refs, ref)
-				if current.Text != "" && !strings.HasSuffix(current.Text, " ") {
-					current.Text += " "
-				}
-				current.Text += "→" + ref
+		case NodeParagraph:
+			text := extractTextContent(child)
+			if text != "" {
+				m.Tags = append(m.Tags, Tag{Type: "p", Value: text})
 			}
 
 		case NodeItalic:
-			text := strings.TrimSpace(ExtractText(child))
+			text := extractTextContent(child)
 			if text != "" {
-				if current.Text != "" && !strings.HasSuffix(current.Text, "(") {
-					current.Text += " "
-				}
-				current.Text += text
+				m.Tags = append(m.Tags, Tag{Type: "i", Value: text})
 			}
 
-		case NodeContainer:
-			text := strings.TrimSpace(ExtractText(child))
-			if text != "" {
-				if current.Text != "" && !strings.HasSuffix(current.Text, " ") && !strings.HasSuffix(current.Text, ")") {
-					current.Text += " "
-				}
-				current.Text += text
+		case NodeRef:
+			ref := extractTextContent(child)
+			if ref != "" && HasChinese(ref) {
+				m.Tags = append(m.Tags, Tag{Type: "ref", Value: ref})
 			}
 
 		case NodeExample:
-			ex := strings.TrimSpace(ExtractText(child))
+			ex := extractTextContent(child)
 			if ex != "" {
-				current.Examples = append(current.Examples, ex)
+				m.Tags = append(m.Tags, Tag{Type: "ex", Value: ex})
 			}
 
 		case NodeStar:
-			collectExamples(child)
-
-		case NodeUnknown:
-			flushCurrentToEntry(pendingEntry)
-			if pendingEntry != nil {
-				embedded = append(embedded, *pendingEntry)
-				pendingEntry = nil
+			ex := extractTextContent(child)
+			if ex != "" {
+				m.Tags = append(m.Tags, Tag{Type: "*", Value: ex})
 			}
 		}
 	}
 
-	flushCurrentToEntry(pendingEntry)
-	if pendingEntry != nil {
-		embedded = append(embedded, *pendingEntry)
-		pendingEntry = nil
-	}
-
-	return meanings, embedded, pendingEntry
+	m.Text = strings.Join(textParts, " ")
+	return m
 }
 
+// extractTextContent extracts text content from a node and its children
+func extractTextContent(node *Node) string {
+	if node.Type == NodeText {
+		return strings.TrimSpace(node.Value)
+	}
+
+	var parts []string
+	for _, child := range node.Children {
+		text := extractTextContent(child)
+		if text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// getLevel extracts level number from tag (e.g., "m1" -> 1, "m2" -> 2)
+func getLevel(tag string) int {
+	level := 0
+	for _, c := range tag {
+		if c >= '1' && c <= '9' {
+			level = level*10 + int(c-'0')
+		}
+	}
+	return level
+}
+
+// HasChinese checks if string contains Chinese characters
+func HasChinese(s string) bool {
+	for _, r := range s {
+		if r >= 0x4E00 && r <= 0x9FFF {
+			return true
+		}
+	}
+	return false
+}
+
+// SplitHanziPinyin splits Chinese characters and pinyin
 func SplitHanziPinyin(s string) (string, string) {
 	parts := strings.Fields(s)
-
 	if len(parts) < 2 {
 		return s, ""
 	}
-
-	// heuristic:
-	// китайские иероглифы обычно первый блок
-	hanzi := parts[0]
-	pinyin := strings.Join(parts[1:], " ")
-
-	return hanzi, pinyin
+	return parts[0], strings.Join(parts[1:], " ")
 }
 
+// NormalizePinyin normalizes pinyin by removing tones
+func NormalizePinyin(p string) string {
+	p = strings.ToLower(p)
+	replacer := strings.NewReplacer(
+		"ā", "a", "á", "a", "ǎ", "a", "à", "a",
+		"ē", "e", "é", "e", "ě", "e", "è", "e",
+		"ī", "i", "í", "i", "ǐ", "i", "ì", "i",
+		"ō", "o", "ó", "o", "ǒ", "o", "ò", "o",
+		"ū", "u", "ú", "u", "ǔ", "u", "ù", "u",
+		"ǖ", "v", "ǘ", "v", "ǚ", "v", "ǜ", "v",
+	)
+	return replacer.Replace(p)
+}
+
+// IsPinyin checks if string looks like pinyin
 func IsPinyin(s string) bool {
 	if len(s) == 0 {
 		return false
 	}
 	hasLetter := false
-
 	toneChars := "āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ"
-
 	for _, r := range s {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
 			hasLetter = true
@@ -466,82 +215,5 @@ func IsPinyin(s string) bool {
 		}
 		return false
 	}
-
 	return hasLetter
-}
-
-func containsPinyinPattern(s string) bool {
-	pinyinPatterns := []string{"zh", "ch", "sh", "ng", "ai", "ei", "ao", "ou", "an", "en", "ang", "eng", "ong", "iang", "uang", "iong"}
-	lower := strings.ToLower(s)
-	for _, pattern := range pinyinPatterns {
-		if strings.Contains(lower, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func HasChinese(s string) bool {
-	for _, r := range s {
-		if r >= 0x4E00 && r <= 0x9FFF {
-			return true
-		}
-	}
-	return false
-}
-
-func NormalizePinyin(p string) string {
-	p = strings.ToLower(p)
-
-	replacer := strings.NewReplacer(
-		"ā", "a", "á", "a", "ǎ", "a", "à", "a",
-		"ē", "e", "é", "e", "ě", "e", "è", "e",
-		"ī", "i", "í", "i", "ǐ", "i", "ì", "i",
-		"ō", "o", "ó", "o", "ǒ", "o", "ò", "o",
-		"ū", "u", "ú", "u", "ǔ", "u", "ù", "u",
-		"ǖ", "v", "ǘ", "v", "ǚ", "v", "ǜ", "v",
-	)
-
-	return replacer.Replace(p)
-}
-
-func ExtractMeanings(node *Node) []Meaning {
-	meanings, _, _ := ExtractMeaningsWithEmbedded(node)
-	return meanings
-}
-
-func ExtractText(n *Node) string {
-	if n.Type == NodeText {
-		return n.Value
-	}
-
-	var result string
-	for _, c := range n.Children {
-		text := ExtractText(c)
-		if text == "" {
-			continue
-		}
-
-		switch c.Type {
-		case NodeItalic, NodeContainer:
-			result += "(" + text + ")"
-		case NodeRef:
-			result += text
-		default:
-			result += text + " "
-		}
-	}
-
-	return strings.TrimSpace(result)
-}
-
-func cleanPinyin(p string) string {
-	p = strings.TrimSpace(p)
-	if p == "_" || p == "" {
-		return ""
-	}
-	if HasChinese(p) {
-		return ""
-	}
-	return p
 }

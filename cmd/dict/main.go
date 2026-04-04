@@ -7,6 +7,7 @@ import (
 	"os"
 	"parser/internal/parser"
 	"parser/internal/storage"
+	"strings"
 )
 
 var (
@@ -21,8 +22,8 @@ func main() {
 	flag.StringVar(&dbPath, "db", "dictionary.db", "path to SQLite database")
 	flag.StringVar(&dslfiles, "import", "", "comma-separated list of DSL files to import")
 	flag.IntVar(&limit, "limit", 0, "limit number of entries to import (0 = all)")
-	flag.StringVar(&searchStr, "search", "", "search by hanzi or pinyin prefix")
-	flag.BoolVar(&byPinyin, "pinyin", false, "search by pinyin instead of hanzi")
+	flag.StringVar(&searchStr, "search", "", "search by headword or pinyin prefix")
+	flag.BoolVar(&byPinyin, "pinyin", false, "search by pinyin instead of headword")
 	flag.Parse()
 
 	db, err := storage.NewDB(dbPath)
@@ -55,11 +56,21 @@ func importFiles(db *storage.DB, files string) {
 		}
 
 		fmt.Printf("Parsing %s...\n", file)
-		entries, err := parser.ParseFile(file, limit)
+		// Read DSL file
+		data, err := parser.ReadDSL(file)
 		if err != nil {
-			log.Printf("ParseFile %s: %v", file, err)
+			log.Printf("ReadDSL %s: %v", file, err)
 			continue
 		}
+
+		// Tokenize
+		tokens := parser.Lex(data)
+
+		// Parse AST
+		ast := parser.Parse(tokens)
+
+		// Extract entries
+		entries := parser.ExtractEntries(ast, limit)
 
 		fmt.Printf("Inserting %d entries...\n", len(entries))
 		inserted, err := db.InsertEntries(entries, 1000)
@@ -69,11 +80,6 @@ func importFiles(db *storage.DB, files string) {
 		}
 		fmt.Printf("Inserted %d entries from %s\n", inserted, file)
 		total += inserted
-	}
-
-	fmt.Printf("\nResolving refs...\n")
-	if err := db.ResolveRefs(); err != nil {
-		log.Printf("ResolveRefs: %v", err)
 	}
 
 	count, _ := db.Count()
@@ -101,7 +107,21 @@ func search(db *storage.DB, query string) {
 
 	fmt.Printf("Found %d results:\n\n", len(entries))
 	for _, e := range entries {
-		fmt.Printf("%s [%s]\n", e.Hanzi, e.Pinyin)
+		fmt.Printf("%s [%s]\n", e.Headword, e.Pinyin)
+		if len(e.Meanings) > 0 {
+			for i, m := range e.Meanings {
+				if i >= 2 {
+					fmt.Printf("  ... and %d more meanings\n", len(e.Meanings)-2)
+					break
+				}
+				fmt.Printf("  %d. %s", i+1, m.Text)
+				if m.Level > 0 {
+					fmt.Printf(" (level %d)", m.Level)
+				}
+				fmt.Println()
+			}
+		}
+		fmt.Println()
 	}
 }
 
@@ -115,20 +135,13 @@ func stats(db *storage.DB) {
 }
 
 func splitComma(s string) []string {
+	parts := strings.Split(s, ",")
 	var result []string
-	var current string
-	for _, c := range s {
-		if c == ',' {
-			if current != "" {
-				result = append(result, current)
-			}
-			current = ""
-		} else {
-			current += string(c)
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
 		}
-	}
-	if current != "" {
-		result = append(result, current)
 	}
 	return result
 }

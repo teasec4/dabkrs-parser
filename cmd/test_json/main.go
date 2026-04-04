@@ -41,7 +41,7 @@ func main() {
 		return
 	}
 
-	err = storage.StreamEntiresToJSON(ast, "output_stream.json", 100)
+	err = storage.StreamEntriesToJSON(ast, "output_stream.json", 100)
 	if err != nil {
 		panic(err)
 	}

@@ -7,7 +7,8 @@ import (
 	"parser/internal/parser"
 )
 
-func StreamEntiresToJSON(root *parser.Node, filename string, limit int) error {
+// StreamEntriesToJSON streams entries to JSON file
+func StreamEntriesToJSON(root *parser.Node, filename string, limit int) error {
 	entries := parser.ExtractEntries(root, limit)
 
 	file, err := os.Create(filename)

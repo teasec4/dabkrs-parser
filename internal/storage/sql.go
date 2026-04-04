@@ -35,40 +35,31 @@ func initDB(path string) error {
 	schema := `
 CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hanzi TEXT NOT NULL UNIQUE,
+    headword TEXT NOT NULL UNIQUE,
     pinyin TEXT,
-    pinyin_normalized TEXT,
     frequency INTEGER DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_entries_hanzi ON entries(hanzi);
-CREATE INDEX IF NOT EXISTS idx_entries_pinyin_norm ON entries(pinyin_normalized);
+CREATE INDEX IF NOT EXISTS idx_entries_headword ON entries(headword);
 CREATE INDEX IF NOT EXISTS idx_entries_frequency ON entries(frequency DESC);
 
 CREATE TABLE IF NOT EXISTS meanings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    level INTEGER DEFAULT 0,
     text TEXT NOT NULL,
-    part_of_speech TEXT,
     order_num INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_meanings_entry ON meanings(entry_id);
+CREATE INDEX IF NOT EXISTS idx_meanings_level ON meanings(level);
 
-CREATE TABLE IF NOT EXISTS refs (
+CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     meaning_id INTEGER NOT NULL REFERENCES meanings(id) ON DELETE CASCADE,
-    target_entry_id INTEGER REFERENCES entries(id) ON DELETE SET NULL,
-    target_hanzi TEXT
+    type TEXT NOT NULL,
+    value TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_refs_meaning ON refs(meaning_id);
-CREATE INDEX IF NOT EXISTS idx_refs_target ON refs(target_entry_id);
-
-CREATE TABLE IF NOT EXISTS examples (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    meaning_id INTEGER NOT NULL REFERENCES meanings(id) ON DELETE CASCADE,
-    chinese TEXT NOT NULL,
-    translation TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_examples_meaning ON examples(meaning_id);
+CREATE INDEX IF NOT EXISTS idx_tags_meaning ON tags(meaning_id);
+CREATE INDEX IF NOT EXISTS idx_tags_type ON tags(type);
 `
 
 	db, err := sql.Open("sqlite3", path)
@@ -98,13 +89,12 @@ func (s *DB) InsertEntry(entry *parser.Entry) (int64, error) {
 
 	var entryID int64
 	err = tx.QueryRow(`
-		INSERT INTO entries (hanzi, pinyin, pinyin_normalized)
-		VALUES (?, ?, ?)
-		ON CONFLICT(hanzi) DO UPDATE SET
-			pinyin = excluded.pinyin,
-			pinyin_normalized = excluded.pinyin_normalized
+		INSERT INTO entries (headword, pinyin)
+		VALUES (?, ?)
+		ON CONFLICT(headword) DO UPDATE SET
+			pinyin = excluded.pinyin
 		RETURNING id
-	`, entry.Hanzi, entry.Pinyin, entry.PinyinNormalized).Scan(&entryID)
+	`, entry.Headword, entry.Pinyin).Scan(&entryID)
 	if err != nil {
 		return 0, fmt.Errorf("insert entry: %w", err)
 	}
@@ -112,32 +102,21 @@ func (s *DB) InsertEntry(entry *parser.Entry) (int64, error) {
 	for i, m := range entry.Meanings {
 		var meaningID int64
 		err = tx.QueryRow(`
-			INSERT INTO meanings (entry_id, text, part_of_speech, order_num)
+			INSERT INTO meanings (entry_id, level, text, order_num)
 			VALUES (?, ?, ?, ?)
 			RETURNING id
-		`, entryID, m.Text, m.PartOfSpeech, i).Scan(&meaningID)
+		`, entryID, m.Level, m.Text, i).Scan(&meaningID)
 		if err != nil {
 			return 0, fmt.Errorf("insert meaning: %w", err)
 		}
 
-		for _, ref := range m.Refs {
+		for _, tag := range m.Tags {
 			_, err = tx.Exec(`
-				INSERT INTO refs (meaning_id, target_hanzi)
-				VALUES (?, ?)
-			`, meaningID, ref)
-			if err != nil {
-				return 0, fmt.Errorf("insert ref: %w", err)
-			}
-		}
-
-		for _, ex := range m.Examples {
-			chinese, translation := splitExample(ex)
-			_, err = tx.Exec(`
-				INSERT INTO examples (meaning_id, chinese, translation)
+				INSERT INTO tags (meaning_id, type, value)
 				VALUES (?, ?, ?)
-			`, meaningID, chinese, translation)
+			`, meaningID, tag.Type, tag.Value)
 			if err != nil {
-				return 0, fmt.Errorf("insert example: %w", err)
+				return 0, fmt.Errorf("insert tag: %w", err)
 			}
 		}
 	}
@@ -184,27 +163,26 @@ func (s *DB) InsertEntriesBatch(entries []parser.Entry, batchSize int) (int, err
 		for _, entry := range batch {
 			var entryID int64
 			err := tx.QueryRow(`
-				INSERT INTO entries (hanzi, pinyin, pinyin_normalized)
-				VALUES (?, ?, ?)
-				ON CONFLICT(hanzi) DO UPDATE SET
-					pinyin = excluded.pinyin,
-					pinyin_normalized = excluded.pinyin_normalized
+				INSERT INTO entries (headword, pinyin)
+				VALUES (?, ?)
+				ON CONFLICT(headword) DO UPDATE SET
+					pinyin = excluded.pinyin
 				RETURNING id
-			`, entry.Hanzi, entry.Pinyin, entry.PinyinNormalized).Scan(&entryID)
+			`, entry.Headword, entry.Pinyin).Scan(&entryID)
 
 			if err != nil {
 				tx.Rollback()
-				return totalInserted, fmt.Errorf("insert entry (%s): %w", entry.Hanzi, err)
+				return totalInserted, fmt.Errorf("insert entry (%s): %w", entry.Headword, err)
 			}
 
-			entryIDs[entry.Hanzi] = int(entryID)
+			entryIDs[entry.Headword] = int(entryID)
 			totalInserted++
 
 			for i, m := range entry.Meanings {
 				result, err := tx.Exec(`
-					INSERT INTO meanings (entry_id, text, part_of_speech, order_num)
+					INSERT INTO meanings (entry_id, level, text, order_num)
 					VALUES (?, ?, ?, ?)
-				`, entryID, m.Text, m.PartOfSpeech, i)
+				`, entryID, m.Level, m.Text, i)
 				if err != nil {
 					tx.Rollback()
 					return totalInserted, fmt.Errorf("insert meaning: %w", err)
@@ -212,20 +190,14 @@ func (s *DB) InsertEntriesBatch(entries []parser.Entry, batchSize int) (int, err
 
 				meaningID, _ := result.LastInsertId()
 
-				for _, ref := range m.Refs {
-					_, err = tx.Exec(`INSERT INTO refs (meaning_id, target_hanzi) VALUES (?, ?)`, meaningID, ref)
+				for _, tag := range m.Tags {
+					_, err = tx.Exec(`
+						INSERT INTO tags (meaning_id, type, value)
+						VALUES (?, ?, ?)
+					`, meaningID, tag.Type, tag.Value)
 					if err != nil {
 						tx.Rollback()
-						return totalInserted, fmt.Errorf("insert ref: %w", err)
-					}
-				}
-
-				for _, ex := range m.Examples {
-					chinese, translation := splitExample(ex)
-					_, err = tx.Exec(`INSERT INTO examples (meaning_id, chinese, translation) VALUES (?, ?, ?)`, meaningID, chinese, translation)
-					if err != nil {
-						tx.Rollback()
-						return totalInserted, fmt.Errorf("insert example: %w", err)
+						return totalInserted, fmt.Errorf("insert tag: %w", err)
 					}
 				}
 			}
@@ -245,31 +217,20 @@ func (s *DB) InsertEntries(entries []parser.Entry, batchSize int) (int, error) {
 	return s.InsertEntriesBatch(entries, batchSize)
 }
 
-func (s *DB) ResolveRefs() error {
-	_, err := s.db.Exec(`
-		UPDATE refs
-		SET target_entry_id = (
-			SELECT id FROM entries WHERE entries.hanzi = refs.target_hanzi
-		)
-		WHERE target_entry_id IS NULL AND target_hanzi IS NOT NULL
-	`)
-	return err
-}
-
-func (s *DB) GetEntryByHanzi(hanzi string) (*parser.Entry, error) {
+func (s *DB) GetEntryByHeadword(headword string) (*parser.Entry, error) {
 	var entry parser.Entry
 	var entryID int64
 
 	err := s.db.QueryRow(`
-		SELECT id, hanzi, pinyin, pinyin_normalized
-		FROM entries WHERE hanzi = ?
-	`, hanzi).Scan(&entryID, &entry.Hanzi, &entry.Pinyin, &entry.PinyinNormalized)
+		SELECT id, headword, pinyin
+		FROM entries WHERE headword = ?
+	`, headword).Scan(&entryID, &entry.Headword, &entry.Pinyin)
 	if err != nil {
 		return nil, err
 	}
 
 	rows, err := s.db.Query(`
-		SELECT id, text, part_of_speech, order_num
+		SELECT id, level, text, order_num
 		FROM meanings WHERE entry_id = ? ORDER BY order_num
 	`, entryID)
 	if err != nil {
@@ -280,37 +241,25 @@ func (s *DB) GetEntryByHanzi(hanzi string) (*parser.Entry, error) {
 	for rows.Next() {
 		var m parser.Meaning
 		var meaningID int64
-		if err := rows.Scan(&meaningID, &m.Text, &m.PartOfSpeech, &m.Order); err != nil {
+		if err := rows.Scan(&meaningID, &m.Level, &m.Text, &m.Order); err != nil {
 			return nil, err
 		}
 
-		refRows, err := s.db.Query(`SELECT target_hanzi FROM refs WHERE meaning_id = ?`, meaningID)
+		tagRows, err := s.db.Query(`
+			SELECT type, value FROM tags WHERE meaning_id = ?
+		`, meaningID)
 		if err != nil {
 			return nil, err
 		}
-		for refRows.Next() {
-			var ref string
-			if err := refRows.Scan(&ref); err != nil {
-				refRows.Close()
+		for tagRows.Next() {
+			var tag parser.Tag
+			if err := tagRows.Scan(&tag.Type, &tag.Value); err != nil {
+				tagRows.Close()
 				return nil, err
 			}
-			m.Refs = append(m.Refs, ref)
+			m.Tags = append(m.Tags, tag)
 		}
-		refRows.Close()
-
-		exRows, err := s.db.Query(`SELECT chinese, translation FROM examples WHERE meaning_id = ?`, meaningID)
-		if err != nil {
-			return nil, err
-		}
-		for exRows.Next() {
-			var ex, trans string
-			if err := exRows.Scan(&ex, &trans); err != nil {
-				exRows.Close()
-				return nil, err
-			}
-			m.Examples = append(m.Examples, ex+"|"+trans)
-		}
-		exRows.Close()
+		tagRows.Close()
 
 		entry.Meanings = append(entry.Meanings, m)
 	}
@@ -318,14 +267,14 @@ func (s *DB) GetEntryByHanzi(hanzi string) (*parser.Entry, error) {
 	return &entry, nil
 }
 
-func (s *DB) SearchByHanzi(prefix string, limit int) ([]parser.Entry, error) {
+func (s *DB) SearchByHeadword(prefix string, limit int) ([]parser.Entry, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
 	rows, err := s.db.Query(`
-		SELECT id, hanzi, pinyin, pinyin_normalized
-		FROM entries WHERE hanzi LIKE ?
+		SELECT id, headword, pinyin
+		FROM entries WHERE headword LIKE ?
 		LIMIT ?
 	`, prefix+"%", limit)
 	if err != nil {
@@ -336,7 +285,7 @@ func (s *DB) SearchByHanzi(prefix string, limit int) ([]parser.Entry, error) {
 	var entries []parser.Entry
 	for rows.Next() {
 		var e parser.Entry
-		if err := rows.Scan(&e.Hanzi, &e.Pinyin, &e.PinyinNormalized); err != nil {
+		if err := rows.Scan(&e.Headword, &e.Pinyin); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)
@@ -357,12 +306,12 @@ func (s *DB) Search(prefix string, limit int) ([]parser.Entry, error) {
 	}
 
 	rows, err := s.db.Query(`
-		SELECT id, hanzi, pinyin, pinyin_normalized
-		FROM entries 
-		WHERE hanzi LIKE ? OR pinyin_normalized LIKE ?
-		ORDER BY hanzi
+		SELECT id, headword, pinyin
+		FROM entries
+		WHERE headword LIKE ?
+		ORDER BY headword
 		LIMIT ?
-	`, prefix+"%", strings.ReplaceAll(prefix, " ", "%")+"%", limit)
+	`, prefix+"%", limit)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +321,7 @@ func (s *DB) Search(prefix string, limit int) ([]parser.Entry, error) {
 	for rows.Next() {
 		var e parser.Entry
 		var id int64
-		if err := rows.Scan(&id, &e.Hanzi, &e.Pinyin, &e.PinyinNormalized); err != nil {
+		if err := rows.Scan(&id, &e.Headword, &e.Pinyin); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)
@@ -387,11 +336,20 @@ func (s *DB) SearchByPinyin(pinyin string, limit int) ([]parser.Entry, error) {
 	}
 
 	normalized := strings.ToLower(pinyin)
+	normalized = strings.NewReplacer(
+		"ā", "a", "á", "a", "ǎ", "a", "à", "a",
+		"ē", "e", "é", "e", "ě", "e", "è", "e",
+		"ī", "i", "í", "i", "ǐ", "i", "ì", "i",
+		"ō", "o", "ó", "o", "ǒ", "o", "ò", "o",
+		"ū", "u", "ú", "u", "ǔ", "u", "ù", "u",
+		"ǖ", "v", "ǘ", "v", "ǚ", "v", "ǜ", "v",
+	).Replace(normalized)
+
 	rows, err := s.db.Query(`
-		SELECT id, hanzi, pinyin, pinyin_normalized
-		FROM entries 
-		WHERE pinyin_normalized LIKE ?
-		ORDER BY pinyin_normalized
+		SELECT id, headword, pinyin
+		FROM entries
+		WHERE LOWER(pinyin) LIKE ?
+		ORDER BY pinyin
 		LIMIT ?
 	`, normalized+"%", limit)
 	if err != nil {
@@ -403,27 +361,11 @@ func (s *DB) SearchByPinyin(pinyin string, limit int) ([]parser.Entry, error) {
 	for rows.Next() {
 		var e parser.Entry
 		var id int64
-		if err := rows.Scan(&id, &e.Hanzi, &e.Pinyin, &e.PinyinNormalized); err != nil {
+		if err := rows.Scan(&id, &e.Headword, &e.Pinyin); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)
 	}
 
 	return entries, rows.Err()
-}
-
-func splitExample(ex string) (chinese, translation string) {
-	if idx := indexByte(ex, '|'); idx >= 0 {
-		return ex[:idx], ex[idx+1:]
-	}
-	return ex, ""
-}
-
-func indexByte(s string, c byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == c {
-			return i
-		}
-	}
-	return -1
 }
