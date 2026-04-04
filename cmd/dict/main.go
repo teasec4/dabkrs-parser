@@ -63,14 +63,11 @@ func importFiles(db *storage.DB, files string) {
 			continue
 		}
 
-		// Tokenize
-		tokens := parser.Lex(data)
+		// Use FSM parser
+		rawEntries := parser.ParseFSM(data)
 
-		// Parse AST
-		ast := parser.Parse(tokens)
-
-		// Extract entries
-		entries := parser.ExtractEntries(ast, limit)
+		// Convert to Entry format
+		entries := convertRawEntries(rawEntries, limit)
 
 		fmt.Printf("Inserting %d entries...\n", len(entries))
 		inserted, err := db.InsertEntries(entries, 1000)
@@ -84,6 +81,34 @@ func importFiles(db *storage.DB, files string) {
 
 	count, _ := db.Count()
 	fmt.Printf("\nTotal: %d entries in database\n", count)
+}
+
+func convertRawEntries(raw []parser.RawEntry, limit int) []parser.Entry {
+	entries := make([]parser.Entry, 0)
+	for i, re := range raw {
+		if limit > 0 && i >= limit {
+			break
+		}
+		entry := parser.Entry{
+			Headword:         re.Headword,
+			Pinyin:           re.Pinyin,
+			PinyinNormalized: parser.NormalizePinyin(re.Pinyin),
+			Meanings:         make([]parser.Meaning, 0),
+		}
+		for _, rm := range re.Meanings {
+			meaning := parser.Meaning{
+				Level: rm.Level,
+				Text:  rm.Text,
+				Tags:  rm.Tags,
+				Order: len(entry.Meanings),
+			}
+			entry.Meanings = append(entry.Meanings, meaning)
+		}
+		if entry.Headword != "" {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 func search(db *storage.DB, query string) {
