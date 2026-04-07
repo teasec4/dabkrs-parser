@@ -48,6 +48,9 @@ func main() {
 func importFiles(db *storage.DB, files string) {
 	fileList := splitComma(files)
 	total := 0
+	
+	const batchSize = 1000
+	batch := make([]parser.Entry, 0, batchSize)
 
 	for _, file := range fileList {
 		if _, err := os.Stat(file); os.IsNotExist(err) {
@@ -57,33 +60,105 @@ func importFiles(db *storage.DB, files string) {
 
 		fmt.Printf("Parsing %s...\n", file)
 		// Read DSL file
-		data, err := parser.ReadDSL(file)
+		// by Stream
+		r, err := parser.OpenDSL(file)
 		if err != nil {
-			log.Printf("ReadDSL %s: %v", file, err)
-			continue
+            log.Printf("OpenDSL %s: %v", file, err)
+            continue
+        }
+        defer r.Close()
+        
+        fileEntryCount := 0
+        
+		// Use FSM parser stream
+		parser.ParseFSMStream(r, func(entry parser.RawEntry) {
+			e := convertSingleEntry(entry)
+			
+			if e.Headword != ""{
+				// feature create a butch
+				// 
+				batch = append(batch, e)
+				fileEntryCount ++
+				
+				if len(batch) >= batchSize{
+					_, err := db.InsertEntries(batch, batchSize)
+					if err != nil {
+						log.Printf("InsertEntries batch: %v", err)
+					}
+					batch = batch[:0] // очистить
+				}
+				
+			}
+			
+			fileEntryCount++
+			if fileEntryCount % 10000 == 0 {
+                fmt.Printf("Processed %d entries...\n", total)
+            }
+            
+            
+		})
+		
+		if len(batch) > 0{
+		  	_, err := db.InsertEntries(batch, batchSize)
+			if err != nil {
+				log.Printf("InsertEntries final batch: %v", err)
+			}
+			batch = batch[:0]
 		}
-
-		// Tokenize
-		tokens := parser.Lex(data)
-
-		// Parse AST
-		ast := parser.Parse(tokens)
-
-		// Extract entries
-		entries := parser.ExtractEntries(ast, limit)
-
-		fmt.Printf("Inserting %d entries...\n", len(entries))
-		inserted, err := db.InsertEntries(entries, 1000)
-		if err != nil {
-			log.Printf("InsertEntries %s: %v", file, err)
-			continue
-		}
-		fmt.Printf("Inserted %d entries from %s\n", inserted, file)
-		total += inserted
+		
+		total += fileEntryCount
+	 	fmt.Printf("Inserted %d entries from %s\n", total, file)
 	}
 
 	count, _ := db.Count()
 	fmt.Printf("\nTotal: %d entries in database\n", count)
+}
+
+func convertSingleEntry(raw parser.RawEntry) parser.Entry {
+    entry := parser.Entry{
+        Headword:         raw.Headword,
+        Pinyin:           raw.Pinyin,
+        PinyinNormalized: parser.NormalizePinyin(raw.Pinyin),
+        Meanings:         make([]parser.Meaning, 0),
+    }
+    for _, rm := range raw.Meanings {
+        meaning := parser.Meaning{
+            Level: rm.Level,
+            Text:  rm.Text,
+            Tags:  rm.Tags,
+            Order: len(entry.Meanings),
+        }
+        entry.Meanings = append(entry.Meanings, meaning)
+    }
+    return entry
+}
+
+func convertRawEntries(raw []parser.RawEntry, limit int) []parser.Entry {
+	entries := make([]parser.Entry, 0)
+	for i, re := range raw {
+		if limit > 0 && i >= limit {
+			break
+		}
+		entry := parser.Entry{
+			Headword:         re.Headword,
+			Pinyin:           re.Pinyin,
+			PinyinNormalized: parser.NormalizePinyin(re.Pinyin),
+			Meanings:         make([]parser.Meaning, 0),
+		}
+		for _, rm := range re.Meanings {
+			meaning := parser.Meaning{
+				Level: rm.Level,
+				Text:  rm.Text,
+				Tags:  rm.Tags,
+				Order: len(entry.Meanings),
+			}
+			entry.Meanings = append(entry.Meanings, meaning)
+		}
+		if entry.Headword != "" {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 func search(db *storage.DB, query string) {

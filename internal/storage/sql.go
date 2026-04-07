@@ -37,10 +37,12 @@ CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     headword TEXT NOT NULL UNIQUE,
     pinyin TEXT,
+    pinyin_normalized TEXT,
     frequency INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_entries_headword ON entries(headword);
 CREATE INDEX IF NOT EXISTS idx_entries_frequency ON entries(frequency DESC);
+CREATE INDEX IF NOT EXISTS idx_entries_pinyin_norm ON entries(pinyin_normalized);
 
 CREATE TABLE IF NOT EXISTS meanings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,12 +91,13 @@ func (s *DB) InsertEntry(entry *parser.Entry) (int64, error) {
 
 	var entryID int64
 	err = tx.QueryRow(`
-		INSERT INTO entries (headword, pinyin)
-		VALUES (?, ?)
+		INSERT INTO entries (headword, pinyin, pinyin_normalized)
+		VALUES (?, ?, ?)
 		ON CONFLICT(headword) DO UPDATE SET
-			pinyin = excluded.pinyin
+			pinyin = excluded.pinyin,
+			pinyin_normalized = excluded.pinyin_normalized
 		RETURNING id
-	`, entry.Headword, entry.Pinyin).Scan(&entryID)
+	`, entry.Headword, entry.Pinyin, entry.PinyinNormalized).Scan(&entryID)
 	if err != nil {
 		return 0, fmt.Errorf("insert entry: %w", err)
 	}
@@ -163,12 +166,13 @@ func (s *DB) InsertEntriesBatch(entries []parser.Entry, batchSize int) (int, err
 		for _, entry := range batch {
 			var entryID int64
 			err := tx.QueryRow(`
-				INSERT INTO entries (headword, pinyin)
-				VALUES (?, ?)
+				INSERT INTO entries (headword, pinyin, pinyin_normalized)
+				VALUES (?, ?, ?)
 				ON CONFLICT(headword) DO UPDATE SET
-					pinyin = excluded.pinyin
+					pinyin = excluded.pinyin,
+					pinyin_normalized = excluded.pinyin_normalized
 				RETURNING id
-			`, entry.Headword, entry.Pinyin).Scan(&entryID)
+			`, entry.Headword, entry.Pinyin, entry.PinyinNormalized).Scan(&entryID)
 
 			if err != nil {
 				tx.Rollback()
