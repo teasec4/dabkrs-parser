@@ -27,12 +27,11 @@ const (
 	StateExpectMeaning
 )
 
-func ParseFSM(data string) []RawEntry {
-	return ParseFSMStream(strings.NewReader(data))
-}
+// func ParseFSM(data string){
+// 	return ParseFSMStream(strings.NewReader(data), func(onEntry RawEntry) {})
+// }
 
-func ParseFSMStream(r io.Reader) []RawEntry {
-	entries := make([]RawEntry, 0)
+func ParseFSMStream(r io.Reader, onEntry func(RawEntry)){
 	var current *RawEntry
 	state := StateExpectHeadword
 	var meaningBuffer strings.Builder
@@ -51,7 +50,7 @@ func ParseFSMStream(r io.Reader) []RawEntry {
 			line = strings.TrimSpace(line)
 			if containsChinese(line) {
 				if current != nil && current.Headword != "" {
-					entries = append(entries, *current)
+					onEntry(*current)
 				}
 				current = &RawEntry{
 					Headword: line,
@@ -88,7 +87,10 @@ func ParseFSMStream(r io.Reader) []RawEntry {
 					current.Meanings = append(current.Meanings, meanings...)
 				}
 			} else if containsChinese(line) {
-				entries = append(entries, *current)
+				if current != nil{
+					onEntry(*current)
+				}
+				
 				current = &RawEntry{
 					Headword: strings.TrimSpace(line),
 					Pinyin:   "",
@@ -102,10 +104,9 @@ func ParseFSMStream(r io.Reader) []RawEntry {
 	}
 
 	if current != nil && current.Headword != "" {
-		entries = append(entries, *current)
+		onEntry(*current)
 	}
 
-	return entries
 }
 
 func shouldSkipLine(line string) bool {
@@ -204,6 +205,7 @@ func extractMeaningText(s string) string {
 		"[m6]", "", "[m7]", "", "[m8]", "", "[m9]", "", "[m]", "",
 		"[/m]", "", "[i]", "", "[/i]", "", "[c]", "", "[/c]", "",
 		"[p]", "", "[/p]", "", "[*]", "", "[/*]", "",
+		"[b]", "", "[/b]", "",
 		"[ref]", "", "[/ref]", "", "[ex]", "", "[/ex]", "",
 	)
 	s = replacer.Replace(s)
