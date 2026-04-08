@@ -11,3 +11,5 @@
 /test_output.txt
 /dictionary_test_lite.db
 test.db
+dict.json
+dict_test.json

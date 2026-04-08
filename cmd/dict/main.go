@@ -48,7 +48,7 @@ func main() {
 func importFiles(db *storage.DB, files string) {
 	fileList := splitComma(files)
 	total := 0
-	
+
 	const batchSize = 1000
 	batch := make([]parser.Entry, 0, batchSize)
 
@@ -63,51 +63,45 @@ func importFiles(db *storage.DB, files string) {
 		// by Stream
 		r, err := parser.OpenDSL(file)
 		if err != nil {
-            log.Printf("OpenDSL %s: %v", file, err)
-            continue
-        }
-        defer r.Close()
-        
-        fileEntryCount := 0
-        
-		// Use FSM parser stream
+			log.Printf("OpenDSL %s: %v", file, err)
+			continue
+		}
+		defer r.Close()
+
+		fileEntryCount := 0
+
+		// Use FSM parser stream with callback - no memory accumulation
 		parser.ParseFSMStream(r, func(entry parser.RawEntry) {
 			e := convertSingleEntry(entry)
-			
-			if e.Headword != ""{
-				// feature create a butch
-				// 
+
+			if e.Headword != "" {
 				batch = append(batch, e)
-				fileEntryCount ++
-				
-				if len(batch) >= batchSize{
+				fileEntryCount++
+
+				if len(batch) >= batchSize {
 					_, err := db.InsertEntries(batch, batchSize)
 					if err != nil {
 						log.Printf("InsertEntries batch: %v", err)
 					}
-					batch = batch[:0] // очистить
+					batch = batch[:0]
 				}
-				
 			}
-			
-			fileEntryCount++
-			if fileEntryCount % 10000 == 0 {
-                fmt.Printf("Processed %d entries...\n", total)
-            }
-            
-            
+
+			if fileEntryCount%10000 == 0 {
+				fmt.Printf("Processed %d entries...\n", fileEntryCount)
+			}
 		})
-		
-		if len(batch) > 0{
-		  	_, err := db.InsertEntries(batch, batchSize)
+
+		if len(batch) > 0 {
+			_, err := db.InsertEntries(batch, batchSize)
 			if err != nil {
 				log.Printf("InsertEntries final batch: %v", err)
 			}
 			batch = batch[:0]
 		}
-		
+
 		total += fileEntryCount
-	 	fmt.Printf("Inserted %d entries from %s\n", total, file)
+		fmt.Printf("Inserted %d entries from %s\n", total, file)
 	}
 
 	count, _ := db.Count()
@@ -115,22 +109,22 @@ func importFiles(db *storage.DB, files string) {
 }
 
 func convertSingleEntry(raw parser.RawEntry) parser.Entry {
-    entry := parser.Entry{
-        Headword:         raw.Headword,
-        Pinyin:           raw.Pinyin,
-        PinyinNormalized: parser.NormalizePinyin(raw.Pinyin),
-        Meanings:         make([]parser.Meaning, 0),
-    }
-    for _, rm := range raw.Meanings {
-        meaning := parser.Meaning{
-            Level: rm.Level,
-            Text:  rm.Text,
-            Tags:  rm.Tags,
-            Order: len(entry.Meanings),
-        }
-        entry.Meanings = append(entry.Meanings, meaning)
-    }
-    return entry
+	entry := parser.Entry{
+		Headword:         raw.Headword,
+		Pinyin:           raw.Pinyin,
+		PinyinNormalized: parser.NormalizePinyin(raw.Pinyin),
+		Meanings:         make([]parser.Meaning, 0),
+	}
+	for _, rm := range raw.Meanings {
+		meaning := parser.Meaning{
+			Level: rm.Level,
+			Text:  rm.Text,
+			Tags:  rm.Tags,
+			Order: len(entry.Meanings),
+		}
+		entry.Meanings = append(entry.Meanings, meaning)
+	}
+	return entry
 }
 
 func convertRawEntries(raw []parser.RawEntry, limit int) []parser.Entry {
