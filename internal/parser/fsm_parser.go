@@ -31,7 +31,7 @@ const (
 // 	return ParseFSMStream(strings.NewReader(data), func(onEntry RawEntry) {})
 // }
 
-func ParseFSMStream(r io.Reader, onEntry func(RawEntry)){
+func ParseFSMStream(r io.Reader, onEntry func(RawEntry)) {
 	var current *RawEntry
 	state := StateExpectHeadword
 	var meaningBuffer strings.Builder
@@ -72,7 +72,7 @@ func ParseFSMStream(r io.Reader, onEntry func(RawEntry)){
 				}
 			} else if !containsChinese(line) && !strings.HasPrefix(line, "[") {
 				if current != nil {
-					current.Pinyin = NormalizePinyin(line)
+					current.Pinyin = line
 				}
 				state = StateExpectMeaning
 			}
@@ -87,10 +87,10 @@ func ParseFSMStream(r io.Reader, onEntry func(RawEntry)){
 					current.Meanings = append(current.Meanings, meanings...)
 				}
 			} else if containsChinese(line) {
-				if current != nil{
+				if current != nil {
 					onEntry(*current)
 				}
-				
+
 				current = &RawEntry{
 					Headword: strings.TrimSpace(line),
 					Pinyin:   "",
