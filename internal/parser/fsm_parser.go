@@ -72,7 +72,7 @@ func ParseFSMStream(r io.Reader, onEntry func(RawEntry)){
 				}
 			} else if !containsChinese(line) && !strings.HasPrefix(line, "[") {
 				if current != nil {
-					current.Pinyin = normalizePinyin(line)
+					current.Pinyin = NormalizePinyin(line)
 				}
 				state = StateExpectMeaning
 			}
@@ -249,7 +249,7 @@ func extractTags(s string) []Tag {
 	return tags
 }
 
-func normalizePinyin(s string) string {
+func NormalizePinyin(s string) string {
 	s = strings.ToLower(s)
 	s = strings.ReplaceAll(s, "'", "")
 	s = strings.ReplaceAll(s, "’", "")

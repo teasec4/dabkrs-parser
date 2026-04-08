@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
@@ -33,34 +32,6 @@ func OpenDSL(path string) (io.ReadCloser, error){
     reader := transform.NewReader(file, decoder)
     
     return &DSLReader{file:file, reader: reader},  nil
-}
-
-
-// reads entire file into memory (legacy, for backward compatibility)
-func ParseStream(r io.Reader, limit int) ([]Entry, error) {
-	tokens := make([]Token, 0)
-	ch := make(chan Token, 1024)
-
-	go LexStream(r, ch)
-
-	for tok := range ch {
-		tokens = append(tokens, tok)
-	}
-
-	root := Parse(tokens)
-	return ExtractEntries(root, limit), nil
-}
-
-func ParseDSL(path string, limit int) ([]Entry, error) {
-	data, err := ReadDSL(path)
-	if err != nil {
-		return nil, err
-	}
-	return ParseStream(strings.NewReader(data), limit)
-}
-
-func ParseDSLString(content string, limit int) ([]Entry, error) {
-	return ParseStream(strings.NewReader(content), limit)
 }
 
 // reads entire file into memory (legacy, for backward compatibility)
