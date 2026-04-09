@@ -8,6 +8,7 @@ import (
 	"parser/internal/parser"
 	"parser/internal/storage"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -73,18 +74,20 @@ func importFiles(db *storage.DB, files string) {
 		// Use FSM parser stream with callback - no memory accumulation
 		parser.ParseFSMStream(r, func(entry parser.RawEntry) {
 			e := convertSingleEntry(entry)
+			// if e is has a problem with Validation its return empty object
+			if e.Headword == "" {
+				return
+			}
 
-			if e.Headword != "" {
-				batch = append(batch, e)
-				fileEntryCount++
+			batch = append(batch, e)
+			fileEntryCount++
 
-				if len(batch) >= batchSize {
-					_, err := db.InsertEntries(batch, batchSize)
-					if err != nil {
-						log.Printf("InsertEntries batch: %v", err)
-					}
-					batch = batch[:0]
+			if len(batch) >= batchSize {
+				_, err := db.InsertEntries(batch, batchSize)
+				if err != nil {
+					log.Printf("InsertEntries batch: %v", err)
 				}
+				batch = batch[:0]
 			}
 
 			if fileEntryCount%10000 == 0 {
@@ -109,37 +112,19 @@ func importFiles(db *storage.DB, files string) {
 }
 
 func convertSingleEntry(raw parser.RawEntry) parser.Entry {
+	// check for Hanzi (Headword)
+	if raw.Headword == "" {
+		return parser.Entry{}
+	}
 	entry := parser.Entry{
 		Headword:         raw.Headword,
-		Pinyin:           raw.Pinyin,
+		Pinyin:           strings.ReplaceAll(raw.Pinyin, " ", ""),
 		PinyinNormalized: parser.NormalizePinyin(raw.Pinyin),
 		Meanings:         make([]parser.Meaning, 0),
 	}
 	for _, rm := range raw.Meanings {
-		meaning := parser.Meaning{
-			Level: rm.Level,
-			Text:  rm.Text,
-			Tags:  rm.Tags,
-			Order: len(entry.Meanings),
-		}
-		entry.Meanings = append(entry.Meanings, meaning)
-	}
-	return entry
-}
-
-func convertRawEntries(raw []parser.RawEntry, limit int) []parser.Entry {
-	entries := make([]parser.Entry, 0)
-	for i, re := range raw {
-		if limit > 0 && i >= limit {
-			break
-		}
-		entry := parser.Entry{
-			Headword:         re.Headword,
-			Pinyin:           re.Pinyin,
-			PinyinNormalized: parser.NormalizePinyin(re.Pinyin),
-			Meanings:         make([]parser.Meaning, 0),
-		}
-		for _, rm := range re.Meanings {
+		// here add a some Filter method
+		if shouldKeepMeaning(rm) {
 			meaning := parser.Meaning{
 				Level: rm.Level,
 				Text:  rm.Text,
@@ -148,11 +133,77 @@ func convertRawEntries(raw []parser.RawEntry, limit int) []parser.Entry {
 			}
 			entry.Meanings = append(entry.Meanings, meaning)
 		}
-		if entry.Headword != "" {
-			entries = append(entries, entry)
+
+	}
+	return entry
+}
+
+// filtering out 垃圾 meanings
+func shouldKeepMeaning(m parser.RawMeaning) bool {
+	// if empty
+	if strings.TrimSpace(m.Text) == "" {
+		return false
+	}
+
+	if len(m.Text) < 2 {
+		return false
+	}
+
+	return true
+}
+
+func isCommonChinese(s string) bool {
+	for _, r := range s {
+		if !isCommonChineseChar(r) {
+			return false
 		}
 	}
-	return entries
+
+	return true
+}
+
+func isCommonChineseChar(r rune) bool {
+	if !unicode.Is(unicode.Han, r) {
+		return false
+	}
+	if isRadical(r) {
+		return false
+	}
+	// Диалектные цифры (〢, 〥, 〨 и т.д.)
+	if r >= 0x3000 && r <= 0x303F {
+		return false
+	}
+	// CJK Compatibility (декоративные варианты)
+	if r >= 0xF900 && r <= 0xFAFF {
+		return false
+	}
+	// Расширение A — редкие иероглифы
+	if r >= 0x3400 && r <= 0x4DBF {
+		return false
+	}
+	// Расширения B-F (очень редкие иероглифы)
+	if r >= 0x20000 && r <= 0x2A6DF {
+		return false
+	}
+	if r >= 0x2A700 && r <= 0x2B73F {
+		return false
+	}
+	if r >= 0x2B740 && r <= 0x2B81F {
+		return false
+	}
+	if r >= 0x2B820 && r <= 0x2CEAF {
+		return false
+	}
+	if r >= 0x2CEB0 && r <= 0x2EBEF {
+		return false
+	}
+	return true
+}
+
+func isRadical(r rune) bool {
+	return (r >= 0x2E80 && r <= 0x2EFF) ||
+		(r >= 0x2F00 && r <= 0x2FDF) ||
+		(r >= 0x2FF0 && r <= 0x2FFF)
 }
 
 func search(db *storage.DB, query string) {

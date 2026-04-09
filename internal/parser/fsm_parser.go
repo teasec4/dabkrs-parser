@@ -27,10 +27,6 @@ const (
 	StateExpectMeaning
 )
 
-// func ParseFSM(data string){
-// 	return ParseFSMStream(strings.NewReader(data), func(onEntry RawEntry) {})
-// }
-
 func ParseFSMStream(r io.Reader, onEntry func(RawEntry)) {
 	var current *RawEntry
 	state := StateExpectHeadword
@@ -201,12 +197,23 @@ func extractLevel(s string) int {
 
 func extractMeaningText(s string) string {
 	replacer := strings.NewReplacer(
+		// Теги уровней
 		"[m1]", "", "[m2]", "", "[m3]", "", "[m4]", "", "[m5]", "",
 		"[m6]", "", "[m7]", "", "[m8]", "", "[m9]", "", "[m]", "",
-		"[/m]", "", "[i]", "", "[/i]", "", "[c]", "", "[/c]", "",
-		"[p]", "", "[/p]", "", "[*]", "", "[/*]", "",
+		"[/m]", "",
+		// Теги форматирования
+		"[i]", "", "[/i]", "",
+		"[c]", "", "[/c]", "",
+		"[p]", "", "[/p]", "",
 		"[b]", "", "[/b]", "",
+		"[*]", "", "[/*]", "",
+		// Теги ссылок и примеров
 		"[ref]", "", "[/ref]", "", "[ex]", "", "[/ex]", "",
+		// Цифры со скобками
+		"1)", "", "2)", "", "3)", "", "4)", "", "5)", "",
+		"6)", "", "7)", "", "8)", "", "9)", "", "0)", "",
+		"(1)", "", "(2)", "", "(3)", "", "(4)", "", "(5)", "",
+		"(6)", "", "(7)", "", "(8)", "", "(9)", "", "(0)", "",
 	)
 	s = replacer.Replace(s)
 	s = strings.TrimSpace(s)
