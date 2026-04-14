@@ -133,7 +133,9 @@ func convertSingleEntry(raw parser.RawEntry) parser.Entry {
 			}
 			entry.Meanings = append(entry.Meanings, meaning)
 		}
-
+	}
+	if len(entry.Meanings) > 5 {
+		entry.Meanings = entry.Meanings[:5]
 	}
 	return entry
 }

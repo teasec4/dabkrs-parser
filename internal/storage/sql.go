@@ -37,11 +37,9 @@ CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     headword TEXT NOT NULL UNIQUE,
     pinyin TEXT,
-    pinyin_normalized TEXT,
-    frequency INTEGER DEFAULT 0
+    pinyin_normalized TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_entries_headword ON entries(headword);
-CREATE INDEX IF NOT EXISTS idx_entries_frequency ON entries(frequency DESC);
 CREATE INDEX IF NOT EXISTS idx_entries_pinyin_norm ON entries(pinyin_normalized);
 
 CREATE TABLE IF NOT EXISTS meanings (
@@ -54,14 +52,19 @@ CREATE TABLE IF NOT EXISTS meanings (
 CREATE INDEX IF NOT EXISTS idx_meanings_entry ON meanings(entry_id);
 CREATE INDEX IF NOT EXISTS idx_meanings_level ON meanings(level);
 
-CREATE TABLE IF NOT EXISTS tags (
+CREATE TABLE IF NOT EXISTS examples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     meaning_id INTEGER NOT NULL REFERENCES meanings(id) ON DELETE CASCADE,
-    type TEXT NOT NULL,
-    value TEXT NOT NULL
+    text TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_tags_meaning ON tags(meaning_id);
-CREATE INDEX IF NOT EXISTS idx_tags_type ON tags(type);
+CREATE INDEX IF NOT EXISTS idx_examples_meaning ON examples(meaning_id);
+
+CREATE TABLE IF NOT EXISTS "references" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meaning_id INTEGER NOT NULL REFERENCES meanings(id) ON DELETE CASCADE,
+    target_headword TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_references_meaning ON "references"(meaning_id);
 `
 
 	db, err := sql.Open("sqlite3", path)
@@ -114,12 +117,22 @@ func (s *DB) InsertEntry(entry *parser.Entry) (int64, error) {
 		}
 
 		for _, tag := range m.Tags {
-			_, err = tx.Exec(`
-				INSERT INTO tags (meaning_id, type, value)
-				VALUES (?, ?, ?)
-			`, meaningID, tag.Type, tag.Value)
-			if err != nil {
-				return 0, fmt.Errorf("insert tag: %w", err)
+			if tag.Type == "ref" {
+				_, err = tx.Exec(`
+					INSERT INTO references (meaning_id, target_headword)
+					VALUES (?, ?)
+				`, meaningID, tag.Value)
+				if err != nil {
+					return 0, fmt.Errorf("insert reference: %w", err)
+				}
+			} else if tag.Type == "ex" {
+				_, err = tx.Exec(`
+					INSERT INTO examples (meaning_id, text)
+					VALUES (?, ?)
+				`, meaningID, tag.Value)
+				if err != nil {
+					return 0, fmt.Errorf("insert example: %w", err)
+				}
 			}
 		}
 	}
@@ -195,13 +208,24 @@ func (s *DB) InsertEntriesBatch(entries []parser.Entry, batchSize int) (int, err
 				meaningID, _ := result.LastInsertId()
 
 				for _, tag := range m.Tags {
-					_, err = tx.Exec(`
-						INSERT INTO tags (meaning_id, type, value)
-						VALUES (?, ?, ?)
-					`, meaningID, tag.Type, tag.Value)
-					if err != nil {
-						tx.Rollback()
-						return totalInserted, fmt.Errorf("insert tag: %w", err)
+					if tag.Type == "ref" {
+						_, err = tx.Exec(`
+							INSERT INTO "references" (meaning_id, target_headword)
+							VALUES (?, ?)
+						`, meaningID, tag.Value)
+						if err != nil {
+							tx.Rollback()
+							return totalInserted, fmt.Errorf("insert reference: %w", err)
+						}
+					} else if tag.Type == "ex" {
+						_, err = tx.Exec(`
+							INSERT INTO examples (meaning_id, text)
+							VALUES (?, ?)
+						`, meaningID, tag.Value)
+						if err != nil {
+							tx.Rollback()
+							return totalInserted, fmt.Errorf("insert example: %w", err)
+						}
 					}
 				}
 			}
