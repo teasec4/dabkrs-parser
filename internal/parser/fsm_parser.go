@@ -3,6 +3,7 @@ package parser
 import (
 	"bufio"
 	"io"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -26,10 +27,6 @@ const (
 	StateExpectPinyin
 	StateExpectMeaning
 )
-
-// func ParseFSM(data string){
-// 	return ParseFSMStream(strings.NewReader(data), func(onEntry RawEntry) {})
-// }
 
 func ParseFSMStream(r io.Reader, onEntry func(RawEntry)) {
 	var current *RawEntry
@@ -78,27 +75,44 @@ func ParseFSMStream(r io.Reader, onEntry func(RawEntry)) {
 			}
 
 		case StateExpectMeaning:
+			rawLine := line
 			line = strings.TrimSpace(line)
+
 			if strings.HasPrefix(line, "[m") {
+				// Normal meaning line
 				meaningBuffer.Reset()
 				meaningBuffer.WriteString(line)
 				if current != nil {
 					meanings := parseMeaningBlock(&meaningBuffer, scanner)
 					current.Meanings = append(current.Meanings, meanings...)
 				}
-			} else if containsChinese(line) {
+			} else if containsChinese(line) && !startsWithWhitespace(rawLine) {
+				// Chinese at column 0 = new headword (NOT a meaning line with embedded Chinese)
 				if current != nil {
 					onEntry(*current)
 				}
 
 				current = &RawEntry{
-					Headword: strings.TrimSpace(line),
+					Headword: line,
 					Pinyin:   "",
 					Meanings: nil,
 				}
 				state = StateExpectPinyin
 			} else if strings.HasPrefix(line, "#") {
 				state = StateExpectHeadword
+			} else if startsWithWhitespace(rawLine) {
+				// Malformed meaning: indented line that's not [m]-tagged — treat as implicit meaning
+				text := extractMeaningText(line)
+				tags := extractTags(line)
+				if text != "" && len([]rune(text)) >= 2 {
+					if current != nil {
+						current.Meanings = append(current.Meanings, RawMeaning{
+							Level: 1,
+							Text:  text,
+							Tags:  tags,
+						})
+					}
+				}
 			}
 		}
 	}
@@ -127,6 +141,13 @@ func containsChinese(s string) bool {
 		}
 	}
 	return false
+}
+
+func startsWithWhitespace(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	return s[0] == ' ' || s[0] == '\t'
 }
 
 func parseMeaningBlock(buf *strings.Builder, scanner *bufio.Scanner) []RawMeaning {
@@ -200,13 +221,27 @@ func extractLevel(s string) int {
 }
 
 func extractMeaningText(s string) string {
+	// Remove parameterized color tags: [c red], [c blue], [c brown], [c green], [c violet], etc.
+	s = regexp.MustCompile(`\[c\s+\w+\]`).ReplaceAllString(s, "")
+
 	replacer := strings.NewReplacer(
+		// Теги уровней
 		"[m1]", "", "[m2]", "", "[m3]", "", "[m4]", "", "[m5]", "",
 		"[m6]", "", "[m7]", "", "[m8]", "", "[m9]", "", "[m]", "",
-		"[/m]", "", "[i]", "", "[/i]", "", "[c]", "", "[/c]", "",
-		"[p]", "", "[/p]", "", "[*]", "", "[/*]", "",
+		"[/m]", "",
+		// Теги форматирования
+		"[i]", "", "[/i]", "",
+		"[c]", "", "[/c]", "",
+		"[p]", "", "[/p]", "",
 		"[b]", "", "[/b]", "",
+		"[*]", "", "[/*]", "",
+		// Теги ссылок и примеров
 		"[ref]", "", "[/ref]", "", "[ex]", "", "[/ex]", "",
+		// Цифры со скобками
+		"1)", "", "2)", "", "3)", "", "4)", "", "5)", "",
+		"6)", "", "7)", "", "8)", "", "9)", "", "0)", "",
+		"(1)", "", "(2)", "", "(3)", "", "(4)", "", "(5)", "",
+		"(6)", "", "(7)", "", "(8)", "", "(9)", "", "(0)", "",
 	)
 	s = replacer.Replace(s)
 	s = strings.TrimSpace(s)
