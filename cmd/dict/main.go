@@ -9,6 +9,8 @@ import (
 	"parser/internal/storage"
 	"strings"
 	"unicode"
+
+	"github.com/go-ego/gse"
 )
 
 var (
@@ -17,6 +19,9 @@ var (
 	limit     int
 	searchStr string
 	byPinyin  bool
+
+	seg           gse.Segmenter
+	segInitialized bool
 )
 
 func main() {
@@ -26,6 +31,13 @@ func main() {
 	flag.StringVar(&searchStr, "search", "", "search by headword or pinyin prefix")
 	flag.BoolVar(&byPinyin, "pinyin", false, "search by pinyin instead of headword")
 	flag.Parse()
+
+	dictDir := os.Getenv("GSE_DATA_DIR")
+	if dictDir != "" {
+		seg.DictPath = dictDir
+	}
+	seg.LoadDict()
+	segInitialized = true
 
 	db, err := storage.NewDB(dbPath)
 	if err != nil {
@@ -116,6 +128,27 @@ func convertSingleEntry(raw parser.RawEntry) parser.Entry {
 	if raw.Headword == "" {
 		return parser.Entry{}
 	}
+
+	// Filter: skip entries without ANY Chinese characters in headword
+	hasChinese := false
+	for _, r := range raw.Headword {
+		if unicode.Is(unicode.Han, r) {
+			hasChinese = true
+			break
+		}
+	}
+	if !hasChinese {
+		return parser.Entry{}
+	}
+
+	// GSE phrase filter: skip if headword contains >2 segments
+	if segInitialized {
+		segs := gse.ToSlice(seg.Segment([]byte(raw.Headword)))
+		if len(segs) > 2 {
+			return parser.Entry{}
+		}
+	}
+
 	entry := parser.Entry{
 		Headword:         raw.Headword,
 		Pinyin:           strings.ReplaceAll(raw.Pinyin, " ", ""),
@@ -123,35 +156,51 @@ func convertSingleEntry(raw parser.RawEntry) parser.Entry {
 		Meanings:         make([]parser.Meaning, 0),
 	}
 	for _, rm := range raw.Meanings {
-		// here add a some Filter method
-		if shouldKeepMeaning(rm) {
-			meaning := parser.Meaning{
-				Level: rm.Level,
-				Text:  rm.Text,
-				Tags:  rm.Tags,
-				Order: len(entry.Meanings),
-			}
-			entry.Meanings = append(entry.Meanings, meaning)
+		// Clean meaning text: strip Chinese chars and pinyin tone-marked words
+		cleaned := cleanMeaningText(rm.Text)
+		if len(cleaned) < 2 {
+			continue
 		}
-	}
-	if len(entry.Meanings) > 5 {
-		entry.Meanings = entry.Meanings[:5]
+		meaning := parser.Meaning{
+			Level: rm.Level,
+			Text:  cleaned,
+			Tags:  rm.Tags,
+			Order: len(entry.Meanings),
+		}
+		entry.Meanings = append(entry.Meanings, meaning)
 	}
 	return entry
 }
 
-// filtering out 垃圾 meanings
-func shouldKeepMeaning(m parser.RawMeaning) bool {
-	// if empty
-	if strings.TrimSpace(m.Text) == "" {
-		return false
+// cleanMeaningText removes Chinese characters and pinyin tone-marked text from meaning
+func cleanMeaningText(text string) string {
+	// Strip Chinese characters (Han)
+	var sb strings.Builder
+	for _, r := range text {
+		if !unicode.Is(unicode.Han, r) {
+			sb.WriteRune(r)
+		}
+	}
+	text = sb.String()
+
+	// Strip pinyin: words containing tone-marked vowels (āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ)
+	pinyinVowels := "āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ"
+	words := strings.Fields(text)
+	var cleanWords []string
+	for _, word := range words {
+		hasTone := false
+		for _, r := range word {
+			if strings.ContainsRune(pinyinVowels, r) {
+				hasTone = true
+				break
+			}
+		}
+		if !hasTone {
+			cleanWords = append(cleanWords, word)
+		}
 	}
 
-	if len(m.Text) < 2 {
-		return false
-	}
-
-	return true
+	return strings.TrimSpace(strings.Join(cleanWords, " "))
 }
 
 func isCommonChinese(s string) bool {

@@ -1,16 +1,24 @@
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.db.bak*
+dictionary*
+dabkrs_clean*
+test_clean*
+test.db*
+dict*
+
+# Large data files
 /dabkrs*
 /dump.txt
 /cleaned_results.txt
 /dictionary.json
-/dictionary.db
-/cmd/optimize/dictionary.db
-/cmd/optimize/dictionary_optimized.db
-/dictionary_optimized.db
 /output.json
 /output.txt
 /test_output.txt
-/dictionary_test_lite.db
-test.db
-dict.json
-dict_test.json
+
+# Binaries
 /bin
+/dict
+/dict_test
