@@ -156,6 +156,18 @@ func convertSingleEntry(raw parser.RawEntry) parser.Entry {
 		Meanings:         make([]parser.Meaning, 0),
 	}
 	for _, rm := range raw.Meanings {
+		// Skip examples: [ex]...[/ex] — these are usage examples, not translations
+		isExample := false
+		for _, tag := range rm.Tags {
+			if tag.Type == "ex" {
+				isExample = true
+				break
+			}
+		}
+		if isExample {
+			continue
+		}
+
 		// Clean meaning text: strip Chinese chars and pinyin tone-marked words
 		cleaned := cleanMeaningText(rm.Text)
 		if len(cleaned) < 2 {
